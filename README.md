@@ -91,6 +91,7 @@ npm run dev
 [行情数据约定](docs/MARKET_DATA.md)。可选评价模块见
 [扩展评价模块](docs/EXTENDED_EVALUATORS.md)。
 [遗传规划挖掘与自动准入](docs/GENETIC_PROGRAMMING_MINING.md)说明训练/测试隔离、
-两套 CLI 评价标准、相关性准入、断点恢复与 7x24 运行。
+两套 CLI 评价标准、相关性准入、断点恢复与 7x24 运行。Webapp 的正式因子库 `/factors`
+也提供“遗传算法添加因子”入口，可配置、启动、停止并查看同一套 campaign 的实时进度。
 新因子批次的保存规范见 [因子注册表规范](docs/FACTOR_REGISTRY.md)。
 可视化平台的启动与验证见 [Web 平台说明](webapp/README.md)。

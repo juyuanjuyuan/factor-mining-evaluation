@@ -26,8 +26,8 @@
   联合剔除对数总市值、20 日收盘收益、20 日平均成交额和 20 日收益波动率，再做截面
   Z-score。仓库没有自由流通股本，所以这里只能使用“平均成交额流动性代理”，绝不把
   `vol` 冒充论文中的换手率。
-- 仓库当前没有已接入引擎、可读取的逐日行业矩阵，因此 `paper_local` 没有做行业中性。
-  这部分是与论文的明确差异，不应把当前结果描述为完整的“五风格+行业”复现。
+- 引擎已提供可选的 `industry_neutralize` 评价模块，但 `paper_local` 训练预处理尚未调用它。
+  因此当前遗传挖掘结果仍不能描述为完整的“五风格+行业”复现。
 - `vwap` 来自 `(high+low)/2` 代理。遗传程序使用该终端时，入库定义会自动标为代理口径。
 - 训练适应度剔除测试项目里同口径的 ST、涨跌停开盘不可交易观测；停牌收益本身为 NaN。
 
@@ -104,6 +104,34 @@ CLI 在评价未通过或相关性未通过时返回退出码 2，适合 shell�
 
 ## 单轮与 7x24 挖掘
 
+### Webapp 操作入口
+
+启动 Webapp 后进入 `/factors`，点击右上角“遗传算法添加因子”。页面使用与本 CLI 相同的
+`GeneticMiningRunner` 配置和输出目录，并提供：
+
+- 训练/测试交易日边界、论文默认种群参数和并行线程配置；
+- CPU 或 Apple GPU (MPS) 训练适应度后端；MPS 不可用时界面会显示原因并禁用选项；
+- 单 cycle、有限多 cycle 或无限连续运行；
+- 是否在双标准与相关性检验通过后自动写入正式因子库；
+- 当前 cycle、训练代数、本代已计算公式进度、测试阶段、通过/入库数量、候选门槛和日志；
+- 停止与 checkpoint 续跑。
+
+遗传挖掘使用独立系统进程，不占用普通因子评价 worker。Webapp 重启只停止状态监控，已经
+启动的挖掘进程继续运行；页面重新打开后会依据 PID 和 campaign 文件恢复监控。为避免宽矩阵
+重复常驻导致内存压力，Webapp 同时只允许一个 GP campaign 运行。Web API 只接受经过验证的
+结构化参数，不接受任意命令、脚本路径或输出路径。
+
+对应 API：
+
+```text
+GET  /api/genetic-campaigns
+GET  /api/genetic-campaigns/backends
+POST /api/genetic-campaigns
+GET  /api/genetic-campaigns/{campaign}
+POST /api/genetic-campaigns/{campaign}/start
+POST /api/genetic-campaigns/{campaign}/stop
+```
+
 下例沿用已经在项目中使用过的训练/测试时间切分，并保持测试集完全冻结：
 
 ```bash
@@ -119,8 +147,25 @@ MPLCONFIGDIR=/private/tmp/matplotlib \
   --generations 3 \
   --hall-of-fame 100 \
   --components 10 \
-  --n-jobs 2
+  --compute-backend mps \
+  --n-jobs 1
 ```
+
+### Apple GPU (MPS) 训练后端
+
+MPS 后端把对齐后的 OHLCV、成交额、VWAP 代理、市值、训练期标签和风格暴露一次转为
+`float32` MPS 张量。表达式树的时序窗口、截面排序、MAD 去极值、风格残差、标准化和
+逐日 Rank IC 均在 GPU 上计算。仅风格回归每日的小型广义逆矩阵返回 CPU；这不是重复
+计算整个因子。Webapp 启动 MPS 进程时强制 `PYTORCH_ENABLE_MPS_FALLBACK=0`，一旦某个算子不受
+MPS 支持就显式失败，不会静默退回 CPU。
+
+MPS 自己管理 GPU 并行，所以必须使用 `--n-jobs 1`。`n_jobs` 只是 CPU 后端的公式线程数，
+不是 GPU 核心数。可用性可通过 Web 的 `/api/genetic-campaigns/backends` 或 Python 接口
+`fitness_backend_statuses()` 检查。
+
+CPU 和 MPS 是两种不同计算口径（CPU `float64`，MPS `float32`），`compute_backend` 被写入
+campaign 配置哈希和 cycle 汇总。因此已存在的 CPU campaign 会继续按 CPU 恢复；切换到
+MPS 必须创建新 campaign，避免将 CPU 适应度缓存混入 MPS 试验。
 
 启动连续模式只需增加：
 
@@ -174,8 +219,14 @@ outputs/gp_factor_mining/<campaign>/
   tests/test_evaluation_standards.py
 /Users/huangjuyuan/miniforge3/envs/rdagent/bin/python \
   tests/test_genetic_mining.py
+/Users/huangjuyuan/miniforge3/envs/rdagent/bin/python \
+  tests/test_genetic_mining_mps.py
+/Users/huangjuyuan/miniforge3/envs/rdagent/bin/python \
+  webapp/server/tests/test_genetic_mining_webapp.py
 ```
 
 `test_training_fitness_cannot_see_test_returns` 会把训练截止日之后的开盘价整体改写，再证明
 训练适应度完全不变。合成 smoke test 会跑通“一代进化 -> 训练内去相关 -> 冻结表达式 ->
 测试集双标准”，并检查 checkpoint、缓存和候选结果均可恢复。
+MPS 合约测试还会遍历全部 GP 算子，对比 CPU/MPS 的有限值、NaN 位置、IC 天数、
+有效样本数和适应度，并单独验证 MPS 训练不能读取测试期收益。

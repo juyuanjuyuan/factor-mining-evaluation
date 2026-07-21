@@ -12,3 +12,4 @@ outputs/webapp/
 
 # 可再生成的评价产物不进入版本库。
 outputs/
+tmp/

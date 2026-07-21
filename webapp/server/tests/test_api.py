@@ -92,6 +92,21 @@ def main() -> None:
                 "quantile_cumulative",
                 "quantile_plot",
             ]
+            industry_method = next(
+                item for item in methods.json() if item["name"] == "industry_neutralize"
+            )
+            assert industry_method["required_data_symbols"] == ["industry"]
+            assert not industry_method["is_default"]
+            joint_neutralization_method = next(
+                item
+                for item in methods.json()
+                if item["name"] == "industry_market_cap_neutralize"
+            )
+            assert joint_neutralization_method["required_data_symbols"] == [
+                "cap",
+                "industry",
+            ]
+            assert not joint_neutralization_method["is_default"]
             training_methods = client.get("/api/models/training-methods")
             assert training_methods.status_code == 200
             training_catalog = {item["name"]: item for item in training_methods.json()}

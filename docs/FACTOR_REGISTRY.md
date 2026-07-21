@@ -37,5 +37,6 @@ factor_registry/<batch_id>.json
 python scripts/validate_factor_registry.py factor_registry/<batch_id>.json
 ```
 
-字段规范见 `factor_registry/schema/factor_batch.schema.json`。当前 Alpha101 批次是
-`factor_registry/alpha101_runnable_factors.json`。
+字段规范见 `factor_registry/schema/factor_batch.schema.json`。当前正式因子库是
+`factor_registry/webapp_factor_library.json`；测试库已清空，新建测试因子时才会创建
+相应批次文件。

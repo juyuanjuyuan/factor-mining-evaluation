@@ -26,10 +26,17 @@ The default parquet mapping is:
 | `cap` | total market capitalization | `market_cap_df.pq` |
 | `limit` | daily price-limit ratio proxy | `limit_ratio_df.pq` |
 | `st` | ST/*ST status, normalized to boolean wide matrix | `st_status_df.pq` |
+| `industry` | evaluator-only point-in-time一级行业分类 | `行业数据.parquet` |
 
 The close matrix is always loaded as the canonical alignment axis. The open matrix is always loaded
-because it defines the return label. Other matrices are loaded only when their symbols occur in the
-expression, then aligned to close by index and columns.
+because it defines the return label. Expression matrices are loaded only when their symbols occur
+in the expression; evaluator-only inputs are loaded only when the selected method declares them.
+Every input is then aligned to close by index and columns.
+
+`industry` is not an expression symbol. Its canonical input is a long table with
+`trade_date`, six-digit `security_code`, and `industry_l1_code`. Each classification is matched to
+the factor exposure date `t` only; missing dates remain missing and are never forward- or
+back-filled.
 
 The factor at day `t` is calculated after that day's close, so it cannot trade at day `t`.
 The position enters at `open[t + 1]`. For holding horizon `H`, the label is:
@@ -45,6 +52,8 @@ Factor expressions may only use information available at or before day `t`.
 
 Supported data symbols: `c`, `o`, `h`, `l`, `vol`, `amt`, `vwap`, `cap`,
 `limit`, `st`.
+
+`industry` is deliberately evaluator-only and cannot appear in a factor expression.
 
 Supported operators:
 

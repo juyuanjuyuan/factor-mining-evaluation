@@ -133,6 +133,85 @@ export type Job = {
   runs?: Run[]
 }
 
+export type GeneticCampaignInput = {
+  campaign: string
+  train_start: string
+  train_end: string
+  test_start: string
+  test_end: string
+  horizon: number
+  n_quantiles: number
+  preprocess_mode: 'paper_local' | 'market_cap' | 'none'
+  population_size: number
+  generations: number
+  hall_of_fame: number
+  components: number
+  tournament_size: number
+  n_jobs: number
+  compute_backend: 'cpu' | 'mps'
+  seed: number
+  continuous: boolean
+  pause_seconds: number
+  max_cycles?: number | null
+  admit: boolean
+}
+
+export type GeneticFitnessBackend = {
+  name: 'cpu' | 'mps'
+  available: boolean
+  reason?: string | null
+  device_name?: string | null
+  torch_version?: string | null
+}
+
+export type GeneticCandidate = {
+  factor_name: string
+  expression: string
+  status: string
+  test_overall_passed: boolean
+  admitted: boolean
+  error?: string
+  standard_gates?: Record<string, { passed?: boolean }>
+}
+
+export type GeneticCycleSummary = {
+  cycle: number
+  status: string
+  test_passed_count: number
+  admitted_count: number
+  failed_count: number
+  candidates: GeneticCandidate[]
+}
+
+export type GeneticCampaign = {
+  campaign: string
+  status: 'created' | 'running' | 'stopped' | 'succeeded' | 'failed'
+  config: GeneticCampaignInput
+  pid?: number | null
+  process_alive: boolean
+  output_dir: string
+  current_cycle?: number | null
+  current_stage?: 'running' | 'testing' | 'completed' | null
+  current_generation?: number | null
+  current_generation_completed?: number | null
+  current_generation_total?: number | null
+  current_generation_failed?: number | null
+  current_generation_progress?: number | null
+  completed_cycles: number
+  test_passed_count: number
+  admitted_count: number
+  failed_candidate_count: number
+  latest_cycle?: GeneticCycleSummary | null
+  last_error?: Record<string, unknown> | null
+  stdout_tail: string
+  stderr_tail: string
+  error?: string | null
+  created_at: string
+  started_at?: string | null
+  updated_at: string
+  finished_at?: string | null
+}
+
 export type ModelTerm = {
   batch_id: string
   factor_name: string
@@ -310,6 +389,16 @@ export const api = {
   deleteJob: (id: string) => request<void>(`/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   createJob: (body: Record<string, unknown>) =>
     request<Job>('/jobs', { method: 'POST', body: JSON.stringify(body) }),
+  geneticCampaigns: () => request<GeneticCampaign[]>('/genetic-campaigns'),
+  geneticFitnessBackends: () => request<GeneticFitnessBackend[]>('/genetic-campaigns/backends'),
+  geneticCampaign: (campaign: string) =>
+    request<GeneticCampaign>(`/genetic-campaigns/${encodeURIComponent(campaign)}`),
+  createGeneticCampaign: (body: GeneticCampaignInput) =>
+    request<GeneticCampaign>('/genetic-campaigns', { method: 'POST', body: JSON.stringify(body) }),
+  startGeneticCampaign: (campaign: string) =>
+    request<GeneticCampaign>(`/genetic-campaigns/${encodeURIComponent(campaign)}/start`, { method: 'POST' }),
+  stopGeneticCampaign: (campaign: string) =>
+    request<GeneticCampaign>(`/genetic-campaigns/${encodeURIComponent(campaign)}/stop`, { method: 'POST' }),
   models: () => request<ModelTest[]>('/models'),
   modelTrainingMethods: () => request<ModelTrainingMethod[]>('/models/training-methods'),
   model: (id: string) => request<ModelTest>(`/models/${encodeURIComponent(id)}`),

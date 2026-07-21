@@ -111,6 +111,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--market-cap-file", default=DEFAULT_FILES["cap"])
     parser.add_argument("--limit-ratio-file", default=DEFAULT_FILES["limit"])
     parser.add_argument("--st-status-file", default=DEFAULT_FILES["st"])
+    parser.add_argument("--industry-file", default=DEFAULT_FILES["industry"])
     return parser
 
 
@@ -126,6 +127,7 @@ def _file_names(args: argparse.Namespace) -> dict[str, str]:
         "cap": args.market_cap_file,
         "limit": args.limit_ratio_file,
         "st": args.st_status_file,
+        "industry": args.industry_file,
     }
 
 

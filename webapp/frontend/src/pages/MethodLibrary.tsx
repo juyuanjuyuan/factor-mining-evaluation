@@ -26,8 +26,18 @@ function methodSummary(method: Method): MethodWithDefinition {
 }
 
 function stateEffect(methodName: string): string {
-  if (methodName === 'market_cap_neutralize') {
-    return '会替换当前工作因子：后续直接读取 state.factor 的 IC、分组收益和回测方法会自动使用市值中性化后的因子。'
+  if (
+    methodName === 'market_cap_neutralize' ||
+    methodName === 'industry_neutralize' ||
+    methodName === 'industry_market_cap_neutralize'
+  ) {
+    const label =
+      methodName === 'industry_neutralize'
+        ? '行业中性化'
+        : methodName === 'industry_market_cap_neutralize'
+          ? '行业＋市值联合中性化'
+          : '市值中性化'
+    return `会替换当前工作因子：后续直接读取 state.factor 的 IC、分组收益和回测方法会自动使用${label}后的因子。`
   }
   if (methodName === 'tradability_filter') {
     return '会屏蔽当前工作因子的不可交易样本：后续评价方法只在剩余可交易样本上运行。'

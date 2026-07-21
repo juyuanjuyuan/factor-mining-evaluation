@@ -67,6 +67,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--candidate-correlation-threshold", type=float, default=0.90)
     parser.add_argument("--elite-size", type=int, default=1)
     parser.add_argument("--n-jobs", type=int, default=1)
+    parser.add_argument(
+        "--compute-backend",
+        choices=("cpu", "mps"),
+        default="cpu",
+        help="training-fitness backend; test-set standards always remain on the CPU evaluator",
+    )
     parser.add_argument("--windows", type=_comma_ints, default=(2, 3, 5, 10, 20, 40, 60))
     parser.add_argument(
         "--terminal",
@@ -111,6 +117,7 @@ def build_config(args: argparse.Namespace) -> MiningCampaignConfig:
         candidate_correlation_threshold=args.candidate_correlation_threshold,
         elite_size=args.elite_size,
         n_jobs=args.n_jobs,
+        compute_backend=args.compute_backend,
         terminals=tuple(args.terminals) if args.terminals else defaults.terminals,
         windows=tuple(args.windows),
         exponents=defaults.exponents,

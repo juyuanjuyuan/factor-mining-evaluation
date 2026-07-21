@@ -19,6 +19,9 @@ webapp = [
   "fastapi>=0.115",
   "uvicorn[standard]>=0.30",
 ]
+mps = [
+  "torch>=2.12",
+]
 
 [project.scripts]
 evaluate-factor = "cli.factor:main"

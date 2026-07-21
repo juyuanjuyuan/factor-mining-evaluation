@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
-from typing import Any, Callable, Mapping, MutableMapping
+from typing import TYPE_CHECKING, Any, Callable, Mapping, MutableMapping
 
 import numpy as np
 
@@ -24,6 +24,9 @@ from .tree import (
     random_tree,
     valid_tree,
 )
+
+if TYPE_CHECKING:
+    from .fitness_backends import FitnessBackend
 
 
 @dataclass(frozen=True)
@@ -48,6 +51,7 @@ class EvolutionConfig:
     candidate_correlation_threshold: float = 0.90
     elite_size: int = 1
     n_jobs: int = 1
+    compute_backend: str = "cpu"
     terminals: tuple[str, ...] = DEFAULT_TERMINALS
     windows: tuple[int, ...] = DEFAULT_WINDOWS
     exponents: tuple[float, ...] = DEFAULT_EXPONENTS
@@ -99,6 +103,10 @@ class EvolutionConfig:
             raise ValueError("candidate_correlation_threshold must be between zero and one")
         if not self.terminals or not self.windows or not self.exponents:
             raise ValueError("terminals, windows, and exponents cannot be empty")
+        if self.compute_backend not in {"cpu", "mps"}:
+            raise ValueError("compute_backend must be cpu or mps")
+        if self.compute_backend == "mps" and self.n_jobs != 1:
+            raise ValueError("MPS backend requires n_jobs=1; the GPU supplies parallelism")
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -165,6 +173,7 @@ def evaluate_population(
     cache: MutableMapping[str, FitnessResult],
     *,
     on_result: Callable[[FitnessResult], None] | None = None,
+    backend: "FitnessBackend | None" = None,
 ) -> tuple[ScoredTree, ...]:
     """Evaluate unique programs, reusing a durable expression-level cache."""
 
@@ -180,7 +189,13 @@ def evaluate_population(
             parsimony_coefficient=config.parsimony_coefficient,
         )
 
-    if config.n_jobs == 1:
+    if backend is not None:
+        calculated = backend.evaluate_many(
+            missing,
+            parsimony_coefficient=config.parsimony_coefficient,
+        )
+        executor = None
+    elif config.n_jobs == 1:
         calculated = map(calculate, missing)
         executor = None
     else:
@@ -381,6 +396,8 @@ def select_diverse_components(
     hall: Mapping[str, ScoredTree],
     context: FitnessContext,
     config: EvolutionConfig,
+    *,
+    backend: "FitnessBackend | None" = None,
 ) -> tuple[tuple[ScoredTree, ...], list[dict[str, Any]]]:
     """Training-only greedy HOF filter analogous to gplearn components."""
 
@@ -391,7 +408,11 @@ def select_diverse_components(
     for item in ranked:
         if item.fitness.selection_score == -np.inf:
             continue
-        exposure = evaluate_processed_expression(item.fitness.expression, context)
+        exposure = (
+            backend.evaluate_processed_tree(item.tree)
+            if backend is not None
+            else evaluate_processed_expression(item.fitness.expression, context)
+        )
         correlations = [
             pooled_factor_correlation(exposure, accepted)
             for accepted in selected_exposures

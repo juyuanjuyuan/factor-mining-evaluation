@@ -127,6 +127,68 @@ class FactorProjectUpdate(BaseModel):
         return normalized
 
 
+class GeneticCampaignCreate(BaseModel):
+    """Safe, bounded web input for one resumable GP mining campaign."""
+
+    campaign: str = Field(
+        min_length=1,
+        max_length=80,
+        pattern=r"^[a-z0-9][a-z0-9_-]*$",
+    )
+    train_start: str
+    train_end: str
+    test_start: str
+    test_end: str
+    horizon: int = Field(default=1, ge=1, le=60)
+    n_quantiles: int = Field(default=10, ge=3, le=20)
+    preprocess_mode: Literal["paper_local", "market_cap", "none"] = "paper_local"
+    population_size: int = Field(default=1000, ge=2, le=10000)
+    generations: int = Field(default=3, ge=1, le=100)
+    hall_of_fame: int = Field(default=100, ge=1, le=5000)
+    components: int = Field(default=10, ge=1, le=500)
+    tournament_size: int = Field(default=20, ge=1, le=1000)
+    n_jobs: int = Field(default=2, ge=1, le=32)
+    compute_backend: Literal["cpu", "mps"] = "cpu"
+    seed: int = Field(default=20190610, ge=0, le=2**32 - 1)
+    continuous: bool = False
+    pause_seconds: float = Field(default=60.0, ge=0, le=86400)
+    max_cycles: int | None = Field(default=None, ge=1, le=100000)
+    admit: bool = True
+
+    @field_validator("campaign")
+    @classmethod
+    def normalize_campaign(cls, value: str) -> str:
+        return value.strip().lower()
+
+    @field_validator("train_start", "train_end", "test_start", "test_end")
+    @classmethod
+    def campaign_iso_date(cls, value: str) -> str:
+        try:
+            return date.fromisoformat(value).isoformat()
+        except (TypeError, ValueError) as exc:
+            raise ValueError("日期必须是 YYYY-MM-DD") from exc
+
+    @model_validator(mode="after")
+    def validate_campaign_contract(self) -> "GeneticCampaignCreate":
+        if date.fromisoformat(self.train_start) > date.fromisoformat(self.train_end):
+            raise ValueError("训练集开始日期不能晚于结束日期")
+        if date.fromisoformat(self.test_start) > date.fromisoformat(self.test_end):
+            raise ValueError("测试集开始日期不能晚于结束日期")
+        if date.fromisoformat(self.train_end) >= date.fromisoformat(self.test_start):
+            raise ValueError("训练集必须严格早于测试集，两个区间不能重叠")
+        if self.tournament_size > self.population_size:
+            raise ValueError("锦标赛规模不能超过种群规模")
+        if self.hall_of_fame > self.population_size * self.generations:
+            raise ValueError("Hall of Fame 不能超过所有代的程序总数")
+        if self.components > self.hall_of_fame:
+            raise ValueError("进入测试集的候选数不能超过 Hall of Fame")
+        if self.compute_backend == "mps" and self.n_jobs != 1:
+            raise ValueError("MPS 后端需要并行线程设为 1；并行由 GPU 提供")
+        if not self.continuous and self.max_cycles is not None:
+            raise ValueError("只有连续模式可以设置最大 cycle 数")
+        return self
+
+
 class TemplateInput(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     kind: Literal["methods", "funnel"] = "methods"

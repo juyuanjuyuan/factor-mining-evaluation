@@ -171,6 +171,33 @@ f_{i,t} &\leftarrow \varepsilon_{i,t}
       '每天在市值为正且因子有限的股票上进行带截距 OLS，最少 3 个样本；残差保持原始宽表轴并替换 state.factor。',
     interpretation: '后续方法自动使用中性化因子；R² 越高说明原始因子的市值暴露越强。',
   },
+  industry_neutralize: {
+    label: '行业中性化',
+    category: '因子变换',
+    description: '每日按当日一级行业去均值，并以行业固定效应残差替换当前工作因子。',
+    formula: String.raw`\begin{aligned}
+\bar f_{g,t} &= \frac{1}{|\mathcal I_{g,t}|}\sum_{j\in\mathcal I_{g,t}}f_{j,t} \\
+f_{i,t} &\leftarrow f_{i,t}-\bar f_{g(i,t),t}
+\end{aligned}`,
+    definition:
+      '每天仅匹配因子暴露日 t 的一级行业标签；在因子有限且行业内至少有 3 只有效股票的样本上，按行业去均值。缺失分类和小行业样本置为 NaN，不以前后日期的行业标签补齐；残差保持原始宽表轴并替换 state.factor。',
+    interpretation:
+      '后续方法自动使用行业中性化因子；R² 表示当日行业固定效应解释的因子横截面方差比例。它不等于市值中性化，若要同时控制行业和市值，应使用联合回归而非随意串联。',
+  },
+  industry_market_cap_neutralize: {
+    label: '行业＋市值联合中性化',
+    category: '因子变换',
+    description: '每日以行业固定效应和对数总市值联合 OLS，并以残差替换当前工作因子。',
+    formula: String.raw`\begin{aligned}
+f_{i,t} &= \alpha_t+\gamma_t\ln(\operatorname{cap}_{i,t})
++\sum_{g=1}^{G_t-1}\beta_{g,t}D_{i,g,t}+\varepsilon_{i,t} \\
+f_{i,t} &\leftarrow \widehat{\varepsilon}_{i,t}
+\end{aligned}`,
+    definition:
+      '每天仅使用因子暴露日 t 的同日一级行业标签；在因子有限、总市值为正且行业内至少有 3 只有效股票的样本上，一次拟合带截距的 OLS。使用 G−1 个行业 dummy；缺失分类、无效市值和小行业样本置为 NaN，不以前后日期补齐行业标签。残差保持原始宽表轴并替换 state.factor。',
+    interpretation:
+      '后续方法自动使用同时控制行业和总市值后的因子；联合 R² 表示两类暴露合计解释的当日横截面方差比例。它不同于先运行两个单独中性化模块：顺序残差会依赖顺序，第二次变换可能重新引入第一次控制的暴露。',
+  },
   tradability_filter: {
     label: '可交易性过滤',
     category: '因子变换',

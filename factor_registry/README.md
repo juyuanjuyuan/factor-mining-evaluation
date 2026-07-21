@@ -3,16 +3,13 @@
 这里保存的是因子定义，不是任何一次评价的结果。统一采用“一批因子一个 JSON”：
 同一次论文录入、模型生成或人工提交的因子放在同一个 `<batch_id>.json` 中。
 
-- `alpha101_runnable_factors.json`：Alpha101 可运行候选因子，属于测试库
-- `gtja191_runnable_factors.json`：国泰君安 GTJA191 中本地数据可运行的 186 条候选因子，属于测试库
-- `webapp_test_factors.json`：Web 平台新增的测试库因子，创建后默认进入这里
 - `webapp_factor_library.json`：用户从测试库提交后的正式因子库，只有这里的因子在“因子库”页面展示
-- `webapp_custom_factors.json`：历史 Web 自定义批次，兼容读取为测试库
-- `alpha101_runnable_factors.csv`：便于人工查看的派生快照，不作为运行输入
+
+当前测试库已清空；Web 平台后续新建的测试因子会自动创建
+`webapp_test_factors.json`。因子库当前仅保留已正式提交的因子定义。
 
 每条记录包含稳定因子名、可执行表达式、论文原式、所需数据字段、实现集合以及
-因子首次入库时间 `entered_at` 和是否使用代理。当前共 83 条：52 条精确输入、
-30 条 VWAP 代理、1 条市值因子。
+因子首次入库时间 `entered_at` 和是否使用代理。
 
 Webapp 中的生命周期分两层：
 
@@ -36,23 +33,14 @@ for factor in load_registered_factors():
     print(factor.factor_name, factor.expression)
 ```
 
-使用新的评价方法批量重跑全部 83 条：
-
-```bash
-python scripts/run_alpha101_evaluations.py \
-  --set runnable \
-  --methods your_new_method \
-  --select all
-```
-
 公式修改后直接更新 JSON，并执行校验：
 
 ```bash
 python scripts/validate_factor_registry.py \
-  factor_registry/alpha101_runnable_factors.json
+  factor_registry/webapp_factor_library.json
 ```
 
-不再在 `src/` 中重复维护 Alpha101 公式。其他新批次从
+因子定义不会在 `src/` 中重复维护。后续新批次从
 `templates/factor_batch.template.json` 开始，并使用
 `scripts/validate_factor_registry.py` 校验。完整规范见
 `docs/FACTOR_REGISTRY.md`。

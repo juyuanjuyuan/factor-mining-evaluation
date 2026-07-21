@@ -1,10 +1,11 @@
-import { CheckCircleOutlined, PlusOutlined, RocketOutlined, SwapOutlined, TagsOutlined } from '@ant-design/icons'
+import { BranchesOutlined, CheckCircleOutlined, PlusOutlined, RocketOutlined, SwapOutlined, TagsOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Alert, Button, Card, Collapse, Empty, Flex, Input, Modal, Segmented, Select, Skeleton, Space, Statistic, Table, Tag, Tooltip, Typography, message } from 'antd'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api, Factor } from '../api/client'
 import { CorrelationWindowChart } from '../components/charts/SeriesChart'
+import { GeneticMiningPanel } from '../components/GeneticMiningPanel'
 import { RunConfigDrawer } from '../components/RunConfigDrawer'
 import { StatusTag } from '../components/StatusTag'
 import { TagEditorModal } from '../components/TagEditorModal'
@@ -100,6 +101,7 @@ export default function FactorLibrary({ mode }: FactorLibraryProps) {
   const [drawerFactors, setDrawerFactors] = useState<Factor[]>([])
   const [tagRun, setTagRun] = useState(false)
   const [tagEditorFactor, setTagEditorFactor] = useState<Factor | null>(null)
+  const [geneticMiningOpen, setGeneticMiningOpen] = useState(false)
   // 展开的项目分组与各组页码在会话内记住，返回列表时保持原样
   const expandedKey = `factor-library:${mode}:expanded`
   const pagesKey = `factor-library:${mode}:pages`
@@ -289,6 +291,11 @@ export default function FactorLibrary({ mode }: FactorLibraryProps) {
           </Typography.Text>
         </div>
         <Space className="page-heading-actions">
+          {!isTestLibrary && (
+            <Button type="primary" icon={<BranchesOutlined />} onClick={() => setGeneticMiningOpen(true)}>
+              遗传算法添加因子
+            </Button>
+          )}
           {isTestLibrary && (
             <Link to="/test-factors/new">
               <Button type="primary" icon={<PlusOutlined />}>
@@ -316,6 +323,13 @@ export default function FactorLibrary({ mode }: FactorLibraryProps) {
           <strong>{librarySummary.withoutRun}</strong>
         </div>
       </div>
+      {!isTestLibrary && (
+        <GeneticMiningPanel
+          open={geneticMiningOpen}
+          onOpen={() => setGeneticMiningOpen(true)}
+          onClose={() => setGeneticMiningOpen(false)}
+        />
+      )}
       {!isTestLibrary && (
         <Collapse
           className="collapse-card"

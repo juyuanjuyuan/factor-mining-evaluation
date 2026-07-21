@@ -195,3 +195,43 @@ factor_i = intercept + beta * log(total_market_cap_i) + residual_i
 
 使用最小二乘法，将残差作为后续评价方法使用的工作因子。输出每日样本数、截距、
 市值系数、R² 和残差标准差。该方法只有被显式选择时才会加载市值矩阵。
+
+## 行业中性化
+
+方法名：`industry_neutralize`，额外需要 `industry` 数据。它不是默认 pipeline 的一部分。
+
+每天按因子暴露日 `t` 的一级行业代码分组，在因子有限且分类存在的股票上执行：
+
+```text
+residual_i = factor_i - mean(factor_j for j in same_industry(i, t))
+```
+
+这等价于每天对因子执行“截距 + 行业固定效应”回归后取残差。行业内少于 3 只有效股票时，
+整组置为 `NaN`，不会制造单股票或双股票的伪中性化结果。模块只使用同日分类，不向前或向后
+填补行业标签；残差替换工作因子，之后的 IC、分组收益和回测方法自动使用该残差。
+
+明细 `industry_neutralization` 逐日输出有效因子数、已分类数、使用数、未分类数、小行业剔除数、
+行业数、合格行业数、行业解释 R² 和残差标准差；metrics 汇总中性化天数、平均 R²、覆盖率和两类
+剔除数量。若先后串联市值和行业中性化，结果依赖顺序；同时控制两者应使用下述联合回归。
+
+## 行业与市值联合中性化
+
+方法名：`industry_market_cap_neutralize`，额外需要 `industry` 和 `cap` 数据。它不是默认
+pipeline 的一部分。
+
+每天在因子有限、行业分类存在、市值为正，且所属行业至少有 3 个此类股票的样本上，一次性拟合：
+
+```text
+factor_i = intercept + beta * log(total_market_cap_i)
+           + sum(industry_fixed_effect_g * industry_dummy_i,g) + residual_i
+```
+
+实现使用“截距 + G−1 个行业 dummy”的基准行业编码；更换基准行业不会改变拟合值或残差。残差替换
+当前工作因子，因此后续 IC、分组收益和回测方法自动使用同时剔除行业和总市值暴露后的因子。它与
+`market_cap_neutralize` 后再接 `industry_neutralize` 不同：后者的结果依赖顺序，且第二次变换可重新
+引入第一次控制的暴露。
+
+明细 `industry_market_cap_neutralization` 逐日输出样本覆盖、行业数量、模型参数数、秩、残差自由度、
+截距、可识别时的对数市值系数、联合 R² 和残差标准差；metrics 汇总中性化天数、平均联合 R²、覆盖率
+及未分类、无效市值和小行业剔除数。若对数市值完全可由行业固定效应解释，对数市值系数会标为缺失，
+但联合投影的残差仍然有效。

@@ -11,10 +11,11 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .db import Database
-from .routers import catalog, jobs, model_tests, runs, templates
+from .routers import catalog, genetic_campaigns, jobs, model_tests, runs, templates
 from .services.registry_service import RegistryService
 from .services.run_reader import RunReader
 from .worker.supervisor import WorkerSupervisor
+from .worker.genetic_supervisor import GeneticMiningSupervisor
 
 
 @asynccontextmanager
@@ -31,11 +32,22 @@ async def lifespan(app: FastAPI):
         supervisor = WorkerSupervisor(db, settings)
         supervisor.start()
     app.state.supervisor = supervisor
+    genetic_supervisor = None
+    if os.getenv("FACTOR_WEBAPP_DISABLE_GENETIC_MINING", "").lower() not in {
+        "1",
+        "true",
+        "yes",
+    }:
+        genetic_supervisor = GeneticMiningSupervisor(settings)
+        genetic_supervisor.start()
+    app.state.genetic_supervisor = genetic_supervisor
     try:
         yield
     finally:
         if supervisor:
             supervisor.stop()
+        if genetic_supervisor:
+            genetic_supervisor.stop()
 
 
 def create_app() -> FastAPI:
@@ -53,6 +65,7 @@ def create_app() -> FastAPI:
     application.include_router(templates.router, prefix="/api")
     application.include_router(jobs.router, prefix="/api")
     application.include_router(model_tests.router, prefix="/api")
+    application.include_router(genetic_campaigns.router, prefix="/api")
     application.include_router(runs.router, prefix="/api")
 
     dist = settings.frontend_dist

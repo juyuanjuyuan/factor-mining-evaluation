@@ -49,6 +49,12 @@ class Settings:
         return self.state_dir / "runs"
 
     @property
+    def genetic_mining_dir(self) -> Path:
+        """Campaign roots shared by the CLI and the web mining interface."""
+
+        return self.state_dir.parent / "gp_factor_mining"
+
+    @property
     def test_registry_path(self) -> Path:
         return self.registry_dir / f"{self.test_batch_id}.json"
 

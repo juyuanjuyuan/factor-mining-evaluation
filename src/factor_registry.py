@@ -17,7 +17,7 @@ from paths import PROJECT_ROOT
 SCHEMA_VERSION = 1
 FACTOR_DEFINITION_LANGUAGE = "engine expression"
 DEFAULT_FACTOR_BATCH = (
-    PROJECT_ROOT / "factor_registry" / "alpha101_runnable_factors.json"
+    PROJECT_ROOT / "factor_registry" / "webapp_factor_library.json"
 )
 _IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 _RESULT_FIELDS = {

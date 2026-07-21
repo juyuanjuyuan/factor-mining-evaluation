@@ -37,6 +37,7 @@ from .fitness import (
     fitness_contract,
     prepare_fitness_context,
 )
+from .fitness_backends import create_fitness_backend
 from .tree import ExpressionTree
 
 
@@ -168,9 +169,16 @@ class GeneticMiningRunner:
             preprocess_mode=config.preprocess_mode,
             minimum_ic_days=config.minimum_ic_days,
         )
+        self.fitness_backend = create_fitness_backend(
+            config.evolution.compute_backend,
+            self.fitness_context,
+        )
         self.fitness_cache = self._load_fitness_cache()
 
     def close(self) -> None:
+        if getattr(self, "fitness_backend", None) is not None:
+            self.fitness_backend.close()
+            self.fitness_backend = None
         if not self._lock_handle.closed:
             fcntl.flock(self._lock_handle.fileno(), fcntl.LOCK_UN)
             self._lock_handle.close()
@@ -184,6 +192,20 @@ class GeneticMiningRunner:
     def _initialize_campaign(self) -> None:
         if self.campaign_path.is_file():
             existing = _read_json(self.campaign_path)
+            if existing.get("config_fingerprint") == self.config.fingerprint:
+                return
+            legacy_config = existing.get("config")
+            if isinstance(legacy_config, dict):
+                normalized = json.loads(json.dumps(legacy_config))
+                evolution = normalized.get("evolution")
+                if isinstance(evolution, dict):
+                    evolution.setdefault("compute_backend", "cpu")
+                if normalized == self.config.as_dict():
+                    existing["config"] = normalized
+                    existing["config_fingerprint"] = self.config.fingerprint
+                    existing["updated_at"] = _now()
+                    _atomic_json(self.campaign_path, existing)
+                    return
             if existing.get("config_fingerprint") != self.config.fingerprint:
                 raise ValueError(
                     "Campaign configuration changed; use a new campaign name to keep "
@@ -332,6 +354,7 @@ class GeneticMiningRunner:
                 self.config.evolution,
                 self.fitness_cache,
                 on_result=self._append_fitness,
+                backend=self.fitness_backend,
             )
             update_hall_of_fame(
                 hall,
@@ -364,6 +387,7 @@ class GeneticMiningRunner:
             hall,
             self.fitness_context,
             self.config.evolution,
+            backend=self.fitness_backend,
         )
         checkpoint = {
             **checkpoint,
@@ -492,6 +516,16 @@ class GeneticMiningRunner:
             "status": "completed",
             "completed_at": _now(),
             "fitness_contract": fitness_contract(self.fitness_context),
+            "fitness_backend": (
+                self.fitness_backend.metadata
+                if self.fitness_backend is not None
+                else {
+                    "name": "cpu",
+                    "device": "NumPy/Pandas CPU",
+                    "dtype": "float64",
+                    "implicit_cpu_fallback": False,
+                }
+            ),
             "component_count": len(components),
             "test_passed_count": sum(
                 bool(item.get("test_overall_passed")) for item in candidates

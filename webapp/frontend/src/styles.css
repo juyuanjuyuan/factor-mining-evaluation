@@ -379,6 +379,37 @@ code, .expression-input, .ant-typography code { font-family: "SFMono-Regular", C
 .factor-project-groups .ant-collapse-content { border-top-color: #eee9df !important; }
 .factor-project-groups .ant-collapse-content-box { padding: 0 !important; }
 
+/* Genetic-programming campaign control on the formal factor library page. */
+.gp-campaign-panel { margin-bottom: 20px; }
+.gp-campaign-list { display: flex; flex-direction: column; gap: 12px; }
+.gp-campaign-card { border-color: #e4ddd2 !important; border-radius: 13px !important; background: #fffdf9 !important; }
+.gp-campaign-card .ant-card-body { display: flex; flex-direction: column; gap: 16px; }
+.gp-campaign-dates { display: block; margin-top: 5px; font-size: 12px; }
+.gp-campaign-card .ant-steps { padding: 12px 14px; border: 1px solid #ebe4da; border-radius: 12px; background: #faf8f3; }
+.gp-campaign-card .ant-steps-item-title { font-size: 12px !important; font-weight: 680; }
+.gp-campaign-card .ant-steps-item-description { max-width: 150px !important; font-size: 11px !important; }
+.gp-generation-progress { display: grid; gap: 2px; padding: 0 4px; }
+.gp-generation-progress .ant-progress { margin: 0; }
+.gp-campaign-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); overflow: hidden; border: 1px solid #ebe4da; border-radius: 12px; background: #fff; }
+.gp-campaign-stats .ant-statistic { padding: 11px 14px; border-right: 1px solid #eee9e1; }
+.gp-campaign-stats .ant-statistic:last-child { border-right: 0; }
+.gp-campaign-stats .ant-statistic-title { margin-bottom: 1px; font-size: 11px; }
+.gp-campaign-stats .ant-statistic-content { font-size: 19px; }
+.gp-candidate-list { display: flex; flex-direction: column; gap: 8px; }
+.gp-candidate-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid #eee8df; border-radius: 10px; background: #fff; }
+.gp-candidate-row > div:first-child { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.gp-candidate-row .ant-typography code { display: block; max-width: 100%; }
+.gp-log-tail { max-height: 180px; margin: 12px 0; padding: 12px; overflow: auto; border: 1px solid #e5ded4; border-radius: 10px; color: #5e5144; background: #f7f4ee; font: 11px/1.55 "SFMono-Regular", Consolas, monospace; white-space: pre-wrap; }
+.gp-contract-alert { margin-bottom: 16px; }
+.gp-date-grid, .gp-parameter-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.gp-parameter-grid { margin-top: 10px; }
+.gp-parameter-grid .ant-input-number, .gp-date-grid .ant-select { width: 100%; }
+.gp-advanced { margin: 4px 0 16px; border-color: #e5ded4; border-radius: 12px; background: #faf8f3; }
+.gp-advanced .gp-parameter-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.gp-run-mode { border-color: #e3d9cb !important; background: #faf8f3 !important; }
+.gp-run-mode .ant-card-body { padding-bottom: 12px; }
+.gp-parameter-grid.compact { grid-template-columns: repeat(2, minmax(0, 190px)); margin-top: 0; }
+
 /* Multi-factor model testing */
 .model-leakage-note { margin-bottom: 18px; }
 .model-testing-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 18px; align-items: start; }
@@ -448,6 +479,7 @@ code, .expression-input, .ant-typography code { font-family: "SFMono-Regular", C
   .method-library-sidebar { position: static; max-height: none; }
   .model-session-list { position: static; }
   .model-date-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gp-date-grid, .gp-parameter-grid, .gp-advanced .gp-parameter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .model-split-slider-head { grid-template-columns: 1fr; justify-items: start; }
   .model-split-window.testing { align-items: flex-start; text-align: left; }
   .model-split-boundary { align-items: flex-start; }
@@ -468,6 +500,10 @@ code, .expression-input, .ant-typography code { font-family: "SFMono-Regular", C
   .gate-condition-metric, .gate-condition-op, .gate-condition-value { flex: 1 1 100%; width: 100%; min-width: 0; }
   .gate-result-row { flex-wrap: wrap; }
   .model-form-grid, .model-date-grid, .model-phase-grid, .model-training-method-grid { grid-template-columns: 1fr; }
+  .gp-date-grid, .gp-parameter-grid, .gp-advanced .gp-parameter-grid, .gp-campaign-stats { grid-template-columns: 1fr; }
+  .gp-campaign-stats .ant-statistic { border-right: 0; border-bottom: 1px solid #eee9e1; }
+  .gp-campaign-stats .ant-statistic:last-child { border-bottom: 0; }
+  .gp-candidate-row { grid-template-columns: 1fr; }
   .model-timeline-summary { align-items: flex-start; flex-direction: column; }
   .model-term-row { grid-template-columns: 28px minmax(0, 1fr) 34px; }
   .model-term-row .ant-input-number { grid-column: 2; }

@@ -120,6 +120,17 @@ export const METRIC_SPECS: Record<string, MetricSpec> = {
   prefix_truncation_max_abs_difference: spec('前缀最大绝对差', '数据质量', 'number', 'lower'),
   market_cap_neutralized_days: spec('中性化天数', '数据质量', 'int'),
   market_cap_neutralization_mean_r2: spec('市值回归平均 R²', '数据质量', 'number', 'none', 'R² 越高说明因子与市值相关性越强'),
+  industry_neutralized_days: spec('行业中性化天数', '数据质量', 'int'),
+  industry_neutralization_mean_r2: spec('行业平均 R²', '数据质量', 'number', 'none', 'R² 越高说明行业固定效应解释的因子横截面方差越多'),
+  industry_neutralization_covered_share: spec('行业中性化覆盖率', '数据质量', 'percent', 'higher', '进入行业内去均值的有效因子观测占全部有效因子观测的比例'),
+  industry_neutralization_unclassified_obs: spec('行业未分类观测', '数据质量', 'int', 'lower'),
+  industry_neutralization_small_industry_obs: spec('行业小组剔除观测', '数据质量', 'int', 'lower'),
+  industry_market_cap_neutralized_days: spec('联合中性化天数', '数据质量', 'int'),
+  industry_market_cap_neutralization_mean_r2: spec('行业市值联合平均 R²', '数据质量', 'number', 'none', 'R² 越高说明因子横截面方差越多可由行业和市值联合解释'),
+  industry_market_cap_neutralization_covered_share: spec('联合中性化覆盖率', '数据质量', 'percent', 'higher', '进入行业市值联合回归的有效因子观测占全部有效因子观测的比例'),
+  industry_market_cap_neutralization_unclassified_obs: spec('联合回归未分类观测', '数据质量', 'int', 'lower'),
+  industry_market_cap_neutralization_invalid_cap_obs: spec('联合回归无效市值观测', '数据质量', 'int', 'lower'),
+  industry_market_cap_neutralization_small_industry_obs: spec('联合回归小行业剔除观测', '数据质量', 'int', 'lower'),
   tradability_masked_obs: spec('剔除样本数', '数据质量', 'int'),
   tradability_masked_share: spec('剔除样本占比', '数据质量', 'percent', 'lower'),
   tradability_masked_days: spec('发生剔除天数', '数据质量', 'int'),
@@ -270,6 +281,8 @@ export const DETAIL_TITLES: Record<string, string> = {
   future_data_perturbation: '未来数据扰动检验',
   prefix_truncation_consistency: '前缀截断一致性检验',
   market_cap_neutralization: '市值中性化统计',
+  industry_neutralization: '行业中性化统计',
+  industry_market_cap_neutralization: '行业＋市值联合中性化统计',
 }
 
 const DETAIL_COLUMN_TITLES: Record<string, string> = {
@@ -315,6 +328,8 @@ const DETAIL_ORDER = [
   'future_data_perturbation',
   'prefix_truncation_consistency',
   'market_cap_neutralization',
+  'industry_neutralization',
+  'industry_market_cap_neutralization',
   'tradability_filter',
 ]
 

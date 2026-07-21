@@ -13,6 +13,10 @@ from .cycle_context import apply_cycle_context
 from .future_perturbation import evaluate_future_data_perturbation
 from .ic_peak_decay import evaluate_ic_peak_decay
 from .ic_trend_filter import evaluate_ic_trend_filter
+from .industry_neutralization import evaluate_industry_neutralization
+from .industry_market_cap_neutralization import (
+    evaluate_industry_market_cap_neutralization,
+)
 from .market_cap_neutralization import evaluate_market_cap_neutralization
 from .newey_west import evaluate_newey_west_ic_significance
 from .prefix_truncation import evaluate_prefix_truncation_consistency

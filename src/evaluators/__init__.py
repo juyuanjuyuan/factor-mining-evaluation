@@ -24,6 +24,10 @@ from .ic_trend_filter import (
     overlapping_filtered_ic_mean,
     second_order_low_pass_ic,
 )
+from .industry_neutralization import evaluate_industry_neutralization
+from .industry_market_cap_neutralization import (
+    evaluate_industry_market_cap_neutralization,
+)
 from .market_cap_neutralization import evaluate_market_cap_neutralization
 from .newey_west import (
     evaluate_newey_west_ic_significance,
@@ -89,6 +93,8 @@ __all__ = [
     "evaluate_future_data_perturbation",
     "evaluate_ic_peak_decay",
     "evaluate_ic_trend_filter",
+    "evaluate_industry_market_cap_neutralization",
+    "evaluate_industry_neutralization",
     "evaluate_market_cap_neutralization",
     "evaluate_newey_west_ic_significance",
     "evaluate_prefix_truncation_consistency",

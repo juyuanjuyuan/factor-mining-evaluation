@@ -14,13 +14,21 @@ from typing import Any
 def _load_all(data_dir: str) -> dict[str, Any]:
     import pandas as pd
 
-    from engine import DEFAULT_FILES, normalize_market_data_frame
+    from engine import (
+        DEFAULT_FILES,
+        EVALUATOR_ONLY_DATA_SYMBOLS,
+        normalize_market_data_frame,
+    )
 
     root = Path(data_dir)
-    data = {
-        symbol: pd.read_parquet(root / filename).sort_index()
-        for symbol, filename in DEFAULT_FILES.items()
-    }
+    data = {}
+    for symbol, filename in DEFAULT_FILES.items():
+        if symbol in EVALUATOR_ONLY_DATA_SYMBOLS:
+            continue
+        path = root / filename
+        if not path.is_file():
+            raise FileNotFoundError(f"Missing required market-data input: {path}")
+        data[symbol] = pd.read_parquet(path).sort_index()
     close = data["c"]
     for symbol, frame in list(data.items()):
         if symbol != "c":
@@ -40,8 +48,18 @@ def worker_main(command_queue: Any, event_queue: Any, data_dir: str) -> None:
         event_queue.put({"type": "startup_failed", "error": traceback.format_exc()})
         return
 
-    from engine import evaluate_factor_expression
-    from evaluators.base import REGISTERED_EVALUATION_METHODS
+    import pandas as pd
+
+    from engine import (
+        DEFAULT_FILES,
+        EVALUATOR_ONLY_DATA_SYMBOLS,
+        evaluate_factor_expression,
+        normalize_market_data_frame,
+    )
+    from evaluators.base import (
+        REGISTERED_EVALUATION_METHODS,
+        evaluation_required_data_symbols,
+    )
     from model_training import ModelTerm, ModelTrainingContext, run_model_training
 
     while True:
@@ -56,6 +74,25 @@ def worker_main(command_queue: Any, event_queue: Any, data_dir: str) -> None:
         try:
             run_params = command.get("run_params") or {}
             expression = command["expression"]
+            selected_methods = [
+                REGISTERED_EVALUATION_METHODS[name] for name in command["methods"]
+            ]
+            optional_symbols = (
+                evaluation_required_data_symbols(selected_methods)
+                & EVALUATOR_ONLY_DATA_SYMBOLS
+            )
+            for symbol in sorted(optional_symbols - set(preloaded)):
+                path = Path(data_dir) / DEFAULT_FILES[symbol]
+                if not path.is_file():
+                    raise FileNotFoundError(
+                        f"Missing {symbol!r} evaluator input required by this pipeline: {path}"
+                    )
+                frame = pd.read_parquet(path).sort_index()
+                preloaded[symbol] = normalize_market_data_frame(
+                    symbol,
+                    frame,
+                    preloaded["c"],
+                )
             training_event = None
             training_request = run_params.get("model_training")
             if training_request:
@@ -94,9 +131,7 @@ def worker_main(command_queue: Any, event_queue: Any, data_dir: str) -> None:
                 preloaded_data=preloaded,
                 # Execute the stored pipeline exactly as ordered — it may
                 # legitimately repeat a method (IC before/after neutralization).
-                evaluation_methods=[
-                    REGISTERED_EVALUATION_METHODS[name] for name in command["methods"]
-                ],
+                evaluation_methods=selected_methods,
                 signal_start=run_params.get("signal_start"),
                 signal_end=run_params.get("signal_end"),
             )

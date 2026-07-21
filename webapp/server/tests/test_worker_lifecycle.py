@@ -60,6 +60,13 @@ def write_market_data(data_dir: Path) -> None:
         "limit": pd.DataFrame(0.10, index=index, columns=columns),
         "st": pd.DataFrame(False, index=index, columns=columns),
     }
+    frames["industry"] = pd.DataFrame(
+        {
+            "trade_date": np.repeat(index, len(columns)),
+            "security_code": list(columns) * len(index),
+            "industry_l1_code": np.tile(["A"] * 4 + ["B"] * 4, len(index)),
+        }
+    )
     data_dir.mkdir()
     for symbol, filename in DEFAULT_FILES.items():
         frames[symbol].to_parquet(data_dir / filename)
@@ -125,6 +132,36 @@ def main() -> None:
             result = db.get_run(first_run)
             assert result and result["result"]["return_definition"]
             assert Path(result["output_dir"], "metrics.csv").is_file()
+
+            _, industry_run = add_job(
+                db,
+                settings,
+                "industry_neutralization",
+                methods=["industry_neutralize", "rank_ic", "rank_icir"],
+            )
+            wait_until(lambda: db.get_run(industry_run)["status"] == "succeeded")
+            industry_result = db.get_run(industry_run)
+            assert industry_result
+            industry_details = json.loads(
+                industry_result["result"]["evaluation_details"]
+            )
+            assert "industry_neutralization" in industry_details
+
+            _, joint_neutralization_run = add_job(
+                db,
+                settings,
+                "industry_market_cap_neutralization",
+                methods=["industry_market_cap_neutralize", "rank_ic", "rank_icir"],
+            )
+            wait_until(
+                lambda: db.get_run(joint_neutralization_run)["status"] == "succeeded"
+            )
+            joint_neutralization_result = db.get_run(joint_neutralization_run)
+            assert joint_neutralization_result
+            joint_neutralization_details = json.loads(
+                joint_neutralization_result["result"]["evaluation_details"]
+            )
+            assert "industry_market_cap_neutralization" in joint_neutralization_details
 
             # Model-test runs carry their train/test signal window in the
             # immutable run params. The worker must pass it through to the

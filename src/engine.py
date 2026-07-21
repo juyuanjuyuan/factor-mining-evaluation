@@ -47,7 +47,16 @@ DEFAULT_FILES = {
     "cap": "market_cap_df.pq",
     "limit": "limit_ratio_df.pq",
     "st": "st_status_df.pq",
+    # Classification is evaluator-only: factor expressions must never use
+    # categorical labels as an implicit data input.
+    "industry": "行业数据.parquet",
 }
+
+# ``industry`` is loaded only by the industry-neutralization evaluator.  It is
+# intentionally excluded from the expression namespace and may be absent for
+# regular factor-evaluation jobs.
+EVALUATOR_ONLY_DATA_SYMBOLS = frozenset({"industry"})
+EXPRESSION_DATA_SYMBOLS = frozenset(DEFAULT_FILES) - EVALUATOR_ONLY_DATA_SYMBOLS
 
 NUMPY_ATTRIBUTES = {
     "abs",
@@ -491,7 +500,7 @@ def parse_and_validate_expression(
         raise ValueError("Factor expression cannot be empty")
     tree = ast.parse(expression, mode="eval")
     names = allowed_names or set(expression_namespace({}))
-    names = names | set(DEFAULT_FILES)
+    names = names | set(EXPRESSION_DATA_SYMBOLS)
 
     for node in ast.walk(tree):
         if not isinstance(node, ALLOWED_AST_NODES):
@@ -512,13 +521,15 @@ def parse_and_validate_expression(
 def expression_data_symbols(expression: str) -> set[str]:
     tree = parse_and_validate_expression(expression)
     return {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)} & set(
-        DEFAULT_FILES
+        EXPRESSION_DATA_SYMBOLS
     )
 
 
 def expression_operator_names(expression: str) -> set[str]:
     tree = parse_and_validate_expression(expression)
-    namespace_names = set(expression_namespace({})) - set(DEFAULT_FILES) - {"np"}
+    namespace_names = (
+        set(expression_namespace({})) - set(EXPRESSION_DATA_SYMBOLS) - {"np"}
+    )
     operators: set[str] = set()
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -557,12 +568,73 @@ def normalize_market_data_frame(
 
     if symbol == "st":
         return normalize_st_status_frame(frame, close)
+    if symbol == "industry":
+        return normalize_industry_classification_frame(frame, close)
     return (
         frame
         if frame.index.equals(close.index)
         and frame.columns.equals(close.columns)
         else frame.reindex(index=close.index, columns=close.columns)
     )
+
+
+_INDUSTRY_LONG_COLUMNS = frozenset(
+    {"trade_date", "security_code", "industry_l1_code"}
+)
+
+
+def normalize_industry_classification_frame(
+    frame: pd.DataFrame,
+    close: pd.DataFrame,
+) -> pd.DataFrame:
+    """Normalize point-in-time industry classifications to the close axes.
+
+    The canonical on-disk input is the compact long table with
+    ``trade_date``, zero-padded ``security_code``, and ``industry_l1_code``.
+    A date-by-security wide matrix is also accepted for preloaded fixtures.
+    In both forms the function only matches classifications on the same date;
+    it never fills a classification forward or backward.
+    """
+
+    if _INDUSTRY_LONG_COLUMNS <= set(frame.columns):
+        long = frame.loc[:, list(_INDUSTRY_LONG_COLUMNS)].copy()
+        long["trade_date"] = pd.to_datetime(
+            long["trade_date"], errors="raise"
+        ).dt.normalize()
+        codes = long["security_code"].astype("string").str.strip()
+        if codes.isna().any() or not codes.str.fullmatch(r"\d{1,6}").all():
+            raise ValueError(
+                "Industry long table security_code must contain one- to six-digit codes"
+            )
+        long["security_code"] = codes.str.zfill(6)
+        long["industry_l1_code"] = (
+            long["industry_l1_code"].astype("string").str.strip().replace("", pd.NA)
+        )
+        if long.duplicated(["trade_date", "security_code"]).any():
+            raise ValueError(
+                "Industry long table has duplicate (trade_date, security_code) rows"
+            )
+        normalized = long.pivot(
+            index="trade_date",
+            columns="security_code",
+            values="industry_l1_code",
+        ).sort_index()
+    else:
+        normalized = frame.copy()
+        index = pd.DatetimeIndex(
+            pd.to_datetime(normalized.index, errors="raise")
+        ).normalize()
+        codes = pd.Index(normalized.columns.astype("string").str.strip())
+        string_codes = pd.Series(codes, dtype="string")
+        if not string_codes.str.fullmatch(r"\d{1,6}").all():
+            raise ValueError("Industry matrix columns must contain one- to six-digit codes")
+        normalized.index = index
+        normalized.columns = codes.str.zfill(6)
+        if normalized.index.has_duplicates or normalized.columns.has_duplicates:
+            raise ValueError("Industry matrix has duplicate date or security-code labels")
+        normalized = normalized.sort_index()
+
+    return normalized.reindex(index=close.index, columns=close.columns)
 
 
 def load_market_data(
@@ -600,7 +672,10 @@ def load_market_data(
         if not isinstance(frame, pd.DataFrame) or frame.empty:
             raise ValueError(f"Input {path} is not a nonempty pandas DataFrame")
         is_st_long = symbol == "st" and {"day", "code", "是否st"} <= set(frame.columns)
-        if not is_st_long and (
+        is_industry_long = symbol == "industry" and _INDUSTRY_LONG_COLUMNS <= set(
+            frame.columns
+        )
+        if not is_st_long and not is_industry_long and (
             frame.index.has_duplicates or frame.columns.has_duplicates
         ):
             raise ValueError(f"Input {path} has duplicate index or column labels")

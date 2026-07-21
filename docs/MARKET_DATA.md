@@ -23,6 +23,7 @@
 | `limit_down_price_df.pq` | — | 公司行情源逐日精确跌停价，与复权 OHLC 使用同一尺度 |
 | `limit_ratio_df.pq` | `limit` | 按代码板块推导的常规涨跌幅限制比例宽表 |
 | `st_status_df.pq` | `st` | ST 状态；源文件可为 `day/code/是否st` 长表，加载时规范为布尔宽表 |
+| `行业数据.parquet` | `industry`（仅 evaluator） | 动态一级行业长表：`trade_date/security_code/industry_l1_code` |
 
 ## Price-limit ratio 来源
 
@@ -99,3 +100,14 @@ VWAP proxy，不能与真实输入因子混合比较口径。
 
 `cap` 是总市值，不是行业分类。它不能替代 Alpha101 中
 `IndClass/IndNeutralize` 所需的 sector、industry 和 subindustry 标签。
+
+## 行业分类
+
+`行业数据.parquet` 是行业或行业-市值联合中性化的可选输入，不属于因子表达式命名空间。每行必须唯一标识
+`(trade_date, security_code)`，股票代码为六位字符串，`industry_l1_code` 为当日有效的一级
+行业代码。加载器在评价时将其 pivot 为日期×股票矩阵，并仅用因子暴露日 `t` 的同日分类；
+缺失分类不会以旧值或未来值填充。
+
+导出数据时必须记录并固定分类体系（中信或申万）和层级；同一研究、训练/测试切分和横向
+因子比较不可混用体系。行业数据应覆盖所评价行情区间；覆盖不足时，未分类股票或行业样本少于
+3 只的股票会被行业中性化模块剔除，而不是悄然回填。

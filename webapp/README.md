@@ -1,6 +1,6 @@
 # 因子评价 Web 平台
 
-FastAPI + SQLite + 单常驻子进程 worker，前端为 Vite + React + TypeScript +
+FastAPI + SQLite + 单常驻评价 worker，前端为 Vite + React + TypeScript +
 Ant Design + ECharts。每个 run 写入独立的
 `outputs/webapp/runs/<run_id>/`，不会改动原有 `outputs/factor_evaluation/`。
 
@@ -48,6 +48,9 @@ MPLCONFIGDIR=/private/tmp/matplotlib \
   `factor_registry/webapp_factor_library.json`，不会移动测试库记录，也不会写入评价指标。
 - 新增因子默认保存到 `factor_registry/webapp_test_factors.json`，历史
   `webapp_custom_factors.json` 会继续作为测试库读取。
+- `/factors` 的“遗传算法添加因子”使用独立 GP 进程，不阻塞评价 worker。页面可以配置
+  训练/测试边界、论文默认进化参数、自动入库和连续 cycle，并查看 checkpoint、测试门槛、
+  候选与入库结果。GP 输出写入 `outputs/gp_factor_mining/<campaign>/`。
 
 ## 验证
 
@@ -56,6 +59,8 @@ MPLCONFIGDIR=/private/tmp/matplotlib \
   webapp/server/tests/test_api.py
 /Users/huangjuyuan/miniforge3/envs/rdagent/bin/python \
   webapp/server/tests/test_worker_lifecycle.py
+/Users/huangjuyuan/miniforge3/envs/rdagent/bin/python \
+  webapp/server/tests/test_genetic_mining_webapp.py
 ```
 
 第二项使用合成 parquet 验证任务成功、worker 异常退出隔离和自动重启。

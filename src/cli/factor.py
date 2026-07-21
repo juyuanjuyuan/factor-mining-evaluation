@@ -54,6 +54,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--market-cap-file", default=DEFAULT_FILES["cap"])
     parser.add_argument("--limit-ratio-file", default=DEFAULT_FILES["limit"])
     parser.add_argument("--st-status-file", default=DEFAULT_FILES["st"])
+    parser.add_argument(
+        "--industry-file",
+        default=DEFAULT_FILES["industry"],
+        help=(
+            "point-in-time long industry table used by industry_neutralize and "
+            "industry_market_cap_neutralize"
+        ),
+    )
     return parser
 
 
@@ -78,6 +86,7 @@ def main() -> None:
             "cap": args.market_cap_file,
             "limit": args.limit_ratio_file,
             "st": args.st_status_file,
+            "industry": args.industry_file,
         },
     )
     print(result_as_json(result))
