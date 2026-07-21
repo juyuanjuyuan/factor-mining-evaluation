@@ -10,9 +10,5 @@ webapp/frontend/dist/
 outputs/webapp/
 *.tsbuildinfo
 
-# 本地行情矩阵及可再生成的评价产物不进入版本库。
-# 数据清单保留，以记录数据口径和构建来源。
-data/*
-!data/manifests/
-!data/manifests/*.json
+# 可再生成的评价产物不进入版本库。
 outputs/
