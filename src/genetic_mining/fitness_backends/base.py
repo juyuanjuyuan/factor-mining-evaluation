@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol, Sequence
+from typing import Any, Callable, Protocol, Sequence
 
 import pandas as pd
 
@@ -23,6 +23,7 @@ class FitnessBackend(Protocol):
         trees: Sequence[ExpressionTree],
         *,
         parsimony_coefficient: float,
+        on_progress: Callable[[tuple[FitnessResult, ...]], None] | None = None,
     ) -> tuple[FitnessResult, ...]: ...
 
     def evaluate_processed_tree(self, tree: ExpressionTree) -> pd.DataFrame: ...

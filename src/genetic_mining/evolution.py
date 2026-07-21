@@ -189,10 +189,20 @@ def evaluate_population(
             parsimony_coefficient=config.parsimony_coefficient,
         )
 
+    def record(result: FitnessResult) -> None:
+        cache[result.expression] = result
+        if on_result is not None:
+            on_result(result)
+
     if backend is not None:
+        def record_progress(results: tuple[FitnessResult, ...]) -> None:
+            for result in results:
+                record(result)
+
         calculated = backend.evaluate_many(
             missing,
             parsimony_coefficient=config.parsimony_coefficient,
+            on_progress=record_progress,
         )
         executor = None
     elif config.n_jobs == 1:
@@ -203,9 +213,10 @@ def evaluate_population(
         calculated = executor.map(calculate, missing)
     try:
         for result in calculated:
-            cache[result.expression] = result
-            if on_result is not None:
-                on_result(result)
+            # MPS reports completed batches during a long generation.  CPU
+            # evaluation and custom backends are recorded here after yielding.
+            if result.expression not in cache:
+                record(result)
     finally:
         if executor is not None:
             executor.shutdown(wait=True)

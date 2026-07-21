@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import time
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import numpy as np
@@ -69,6 +70,7 @@ class MPSFitnessBackend:
     name = "mps"
     dtype_name = "float32"
     rolling_column_chunk = 128
+    progress_update_interval_seconds = 60.0
 
     def __init__(self, context: FitnessContext):
         self.context = context
@@ -744,14 +746,34 @@ class MPSFitnessBackend:
         trees: Sequence[ExpressionTree],
         *,
         parsimony_coefficient: float,
+        on_progress: Callable[[tuple[FitnessResult, ...]], None] | None = None,
     ) -> tuple[FitnessResult, ...]:
-        return tuple(
-            self._fitness_result(
+        """Score on MPS and persist completed work at least once a minute.
+
+        The UI reads the durable fitness cache for in-generation progress.  A
+        tuple comprehension kept all MPS results in memory until an entire
+        generation completed, so a long first generation misleadingly stayed
+        at 0 / N.  Report completed batches every minute, plus the final
+        partial batch, without changing the GPU's single-worker execution.
+        """
+
+        results: list[FitnessResult] = []
+        pending: list[FitnessResult] = []
+        next_progress_update = time.monotonic() + self.progress_update_interval_seconds
+        for tree in trees:
+            result = self._fitness_result(
                 tree,
                 parsimony_coefficient=parsimony_coefficient,
             )
-            for tree in trees
-        )
+            results.append(result)
+            pending.append(result)
+            if on_progress is not None and time.monotonic() >= next_progress_update:
+                on_progress(tuple(pending))
+                pending.clear()
+                next_progress_update = time.monotonic() + self.progress_update_interval_seconds
+        if on_progress is not None and pending:
+            on_progress(tuple(pending))
+        return tuple(results)
 
     def evaluate_processed_tree(self, tree: ExpressionTree) -> pd.DataFrame:
         processed = self._preprocess(self.evaluate_raw_tree_tensor(tree))

@@ -230,6 +230,46 @@ def test_mps_population_backend_and_invalid_formula() -> None:
         raise AssertionError("MPS accepted multiple CPU worker threads")
 
 
+def test_mps_population_reports_generation_progress() -> None:
+    """MPS must flush completed candidates before a whole generation ends."""
+
+    data = synthetic_market_data(100)
+    context = prepare_fitness_context(
+        data,
+        train_start="2020-01-02",
+        train_end="2020-05-01",
+        preprocess_mode="none",
+        minimum_ic_days=20,
+    )
+    config = EvolutionConfig(
+        generations=1,
+        population_size=2,
+        hall_of_fame=2,
+        n_components=1,
+        tournament_size=2,
+        n_jobs=1,
+        compute_backend="mps",
+    )
+    backend = MPSFitnessBackend(context)
+    backend.progress_update_interval_seconds = 0.0
+    cache = {}
+    reported = []
+    try:
+        scored = evaluate_population(
+            (terminal("c"), terminal("o")),
+            context,
+            config,
+            cache,
+            on_result=reported.append,
+            backend=backend,
+        )
+    finally:
+        backend.close()
+    assert len(scored) == 2
+    assert len(reported) == 2
+    assert set(cache) == {item.fitness.expression for item in scored}
+
+
 def main() -> None:
     if not require_local_mps():
         return
@@ -237,6 +277,7 @@ def main() -> None:
     test_preprocessing_and_fitness_match_cpu()
     test_mps_fitness_cannot_see_test_returns()
     test_mps_population_backend_and_invalid_formula()
+    test_mps_population_reports_generation_progress()
     print("genetic mining MPS parity contracts passed")
 
 
