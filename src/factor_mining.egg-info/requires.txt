@@ -1,0 +1,8 @@
+matplotlib
+numpy
+pandas
+pyarrow
+
+[webapp]
+fastapi>=0.115
+uvicorn[standard]>=0.30

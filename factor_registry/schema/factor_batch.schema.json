@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "factor_batch.schema.json",
+  "title": "Factor batch registry",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "batch_id",
+    "batch_name",
+    "batch_version",
+    "generated_at",
+    "source",
+    "formula_language",
+    "factor_count",
+    "factors"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "batch_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$"},
+    "batch_name": {"type": "string", "minLength": 1},
+    "project": {"type": "string", "minLength": 1},
+    "batch_version": {"type": "integer", "minimum": 1},
+    "generated_at": {"type": "string"},
+    "source": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {"name": {"type": "string", "minLength": 1}}
+    },
+    "formula_language": {"type": "string", "minLength": 1},
+    "factor_count": {"type": "integer", "minimum": 1},
+    "factors": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["factor_name", "entered_at", "expression", "required_symbols"],
+        "properties": {
+          "factor_name": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]*$"
+          },
+          "entered_at": {"type": "string", "format": "date-time"},
+          "project": {"type": "string", "minLength": 1},
+          "expression": {"type": "string", "minLength": 1},
+          "required_symbols": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    }
+  }
+}

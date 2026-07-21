@@ -1,0 +1,23 @@
+services:
+  factor-platform:
+    build: .
+    image: factor-platform:latest
+    container_name: factor-platform
+    ports:
+      # 宿主机端口:容器端口。改左侧即可换对外端口，例如 "80:8000"
+      - "8000:8000"
+    environment:
+      MPLCONFIGDIR: /tmp/matplotlib
+    volumes:
+      # 行情数据：只读挂载宿主机 data/（562MB，不打进镜像）
+      - ./data:/app/data:ro
+      # 因子库：可写挂载，网页新增因子会写回宿主机的 factor_registry/
+      - ./factor_registry:/app/factor_registry
+      # 运行状态：任务数据库 platform.db 与各次回测结果，用命名卷持久化
+      - platform-state:/app/outputs/webapp
+    restart: unless-stopped
+    # 加载全部行情矩阵到内存的常驻 worker 需要充足内存，按数据规模调整
+    mem_limit: 6g
+
+volumes:
+  platform-state:

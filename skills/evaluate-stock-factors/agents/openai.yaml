@@ -1,0 +1,4 @@
+interface:
+  display_name: "因子评价与扩展"
+  short_description: "运行因子评价并维护评价方法、流水线和 Webapp 契约"
+  default_prompt: "Use $evaluate-stock-factors to evaluate factors or extend the registered evaluation pipeline safely."

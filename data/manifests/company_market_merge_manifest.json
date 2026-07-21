@@ -1,0 +1,35 @@
+{
+  "source_files": [
+    "/Users/huangjuyuan/Desktop/因子挖掘:评价/tmp/2026-06.parquet",
+    "/Users/huangjuyuan/Desktop/因子挖掘:评价/tmp/2026-07.parquet"
+  ],
+  "incoming_rows": 52040,
+  "incoming_dates": [
+    "2026-06-29",
+    "2026-06-30",
+    "2026-07-01",
+    "2026-07-02",
+    "2026-07-03",
+    "2026-07-06",
+    "2026-07-07",
+    "2026-07-08",
+    "2026-07-09",
+    "2026-07-10"
+  ],
+  "incoming_codes": 5207,
+  "existing_last_date": "2026-06-26",
+  "output_shape": [
+    3275,
+    5538
+  ],
+  "new_security_codes": [
+    "001248",
+    "301583"
+  ],
+  "old_security_codes_missing_from_increment": 331,
+  "rebased_security_codes": 5205,
+  "rebase_scale_min": 0.9968895779220779,
+  "rebase_scale_max": 1.419121465915046,
+  "suspended_rows_normalized_to_nan": 119,
+  "st_conflicts_resolved_by_latest_extract": true
+}

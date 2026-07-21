@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "batch_id": "yyyymmdd_source_batch_name",
+  "batch_name": "Human-readable batch name",
+  "project": "Project name shown in the factor libraries",
+  "batch_version": 1,
+  "generated_at": "2026-07-03T00:00:00+08:00",
+  "source": {
+    "type": "paper_or_generated_or_manual",
+    "name": "Source name",
+    "notes": "Optional provenance notes"
+  },
+  "formula_language": "engine expression",
+  "factor_count": 1,
+  "factors": [
+    {
+      "factor_name": "stable_factor_name",
+      "entered_at": "2026-07-03T00:00:00+08:00",
+      "expression": "rank_cs(delta(c, 5))",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "notes": "Optional factor-specific notes"
+    }
+  ]
+}

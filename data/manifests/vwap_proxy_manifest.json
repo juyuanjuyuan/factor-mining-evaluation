@@ -1,0 +1,16 @@
+{
+  "generated_at": "2026-07-01T10:29:56+08:00",
+  "output": "/Users/huangjuyuan/Desktop/因子挖掘:评价/data/vwap_proxy_df.pq",
+  "formula": "(high_df + low_df) / 2",
+  "is_proxy": true,
+  "source_high": "/Users/huangjuyuan/Desktop/因子挖掘:评价/data/high_df.pq",
+  "source_low": "/Users/huangjuyuan/Desktop/因子挖掘:评价/data/low_df.pq",
+  "shape": [
+    3265,
+    5536
+  ],
+  "start_date": "2013-01-14 00:00:00",
+  "end_date": "2026-06-26 00:00:00",
+  "non_null_cells": 12566218,
+  "total_cells": 18075040
+}

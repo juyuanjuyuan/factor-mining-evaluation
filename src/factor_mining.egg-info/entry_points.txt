@@ -1,0 +1,7 @@
+[console_scripts]
+build-factor-dashboard = reporting.dashboard:main
+evaluate-alpha101 = batch:main
+evaluate-factor = cli.factor:main
+evaluate-factor-standard = cli.standard:main
+mine-factors-gp = cli.genetic:main
+validate-factor-registry = factor_registry:main

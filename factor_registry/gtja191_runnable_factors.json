@@ -1,0 +1,2875 @@
+{
+  "schema_version": 1,
+  "batch_id": "gtja191_runnable_factors",
+  "batch_name": "国泰君安 GTJA191 可运行因子",
+  "project": "国泰君安191",
+  "batch_version": 1,
+  "generated_at": "2026-07-17T00:00:00+08:00",
+  "source": {
+    "type": "code",
+    "name": "DolphinDB gtja191Alpha module",
+    "notes": "Translated from the user-supplied DolphinDB day-level implementation, preserving its function bodies where they return a panel. GTJA191_165 and GTJA191_183 use the per-security rolling cumulative-range interpretation implied by SUMAC because the supplied rowMax/rowMin body would collapse the cross-section; GTJA191_190 uses the formula comment's lower-count denominator because its body divides by a boolean mask. Local vwap is the documented proxy. Excluded source factors require benchmark/Fama-French inputs not present in the local market-data contract."
+  },
+  "formula_language": "engine expression",
+  "factor_count": 186,
+  "set_counts": {
+    "runnable": 186,
+    "vwap_proxy": 40,
+    "requires_external_data": 5
+  },
+  "excluded_factors": [
+    {
+      "number": 30,
+      "factor_name": "gtja191_030",
+      "reason": "requires external Fama-French MKT, SMB, and HML series"
+    },
+    {
+      "number": 75,
+      "factor_name": "gtja191_075",
+      "reason": "requires external benchmark index open and close series"
+    },
+    {
+      "number": 149,
+      "factor_name": "gtja191_149",
+      "reason": "requires external benchmark index close series"
+    },
+    {
+      "number": 181,
+      "factor_name": "gtja191_181",
+      "reason": "requires external benchmark index close series"
+    },
+    {
+      "number": 182,
+      "factor_name": "gtja191_182",
+      "reason": "requires external benchmark index open and close series"
+    }
+  ],
+  "factors": [
+    {
+      "number": 1,
+      "factor_name": "gtja191_001",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * ts_corr(rank_cs(delta(log(vol), 1)), rank_cs((c - o) / o), 6)",
+      "required_symbols": [
+        "c",
+        "o",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha1"
+    },
+    {
+      "number": 2,
+      "factor_name": "gtja191_002",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * delta(((c - l) - (h - c)) / (h - l), 1)",
+      "required_symbols": [
+        "c",
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha2"
+    },
+    {
+      "number": 3,
+      "factor_name": "gtja191_003",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sum(where(c == delay(c, 1), 0.0, c - where(c > delay(c, 1), np.minimum(l, delay(c, 1)), np.maximum(h, delay(c, 1)))), 6)",
+      "required_symbols": [
+        "c",
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha3"
+    },
+    {
+      "number": 4,
+      "factor_name": "gtja191_004",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "where((ts_mean(c, 8) + ts_std(c, 8)) < ts_mean(c, 2), -1.0, where(ts_mean(c, 2) < (ts_mean(c, 8) - ts_std(c, 8)), 1.0, where(vol / ts_mean(vol, 20) >= 1, 1.0, -1.0)))",
+      "required_symbols": [
+        "c",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha4"
+    },
+    {
+      "number": 5,
+      "factor_name": "gtja191_005",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * ts_max(ts_corr(ts_rank(vol, 5), ts_rank(h, 5), 5), 3)",
+      "required_symbols": [
+        "h",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha5"
+    },
+    {
+      "number": 6,
+      "factor_name": "gtja191_006",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * rank_cs(sign(delta(o * 0.85 + h * 0.15, 4)))",
+      "required_symbols": [
+        "h",
+        "o"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha6"
+    },
+    {
+      "number": 7,
+      "factor_name": "gtja191_007",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "rank_cs(ts_max(vwap - c, 3)) + rank_cs(ts_min(vwap - c, 3)) * rank_cs(delta(vol, 3))",
+      "required_symbols": [
+        "c",
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha7"
+    },
+    {
+      "number": 8,
+      "factor_name": "gtja191_008",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "rank_cs(-1 * delta((h + l) / 2 * 0.2 + vwap * 0.8, 4))",
+      "required_symbols": [
+        "h",
+        "l",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha8"
+    },
+    {
+      "number": 9,
+      "factor_name": "gtja191_009",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sma(((h + l) / 2 - (delay(h, 1) + delay(l, 1)) / 2) * (h - l) / vol, 7, 2)",
+      "required_symbols": [
+        "h",
+        "l",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha9"
+    },
+    {
+      "number": 10,
+      "factor_name": "gtja191_010",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "rank_cs(ts_max(where(pct(c, 1) < 0, ts_std(pct(c, 1), 20), c) ** 2, 5))",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha10"
+    },
+    {
+      "number": 11,
+      "factor_name": "gtja191_011",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sum((c - l - (h - c)) / (h - l) * vol, 6)",
+      "required_symbols": [
+        "c",
+        "h",
+        "l",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha11"
+    },
+    {
+      "number": 12,
+      "factor_name": "gtja191_012",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "rank_cs(o - ts_sum(vwap, 10) / 10) * (-1 * rank_cs(abs(c - vwap)))",
+      "required_symbols": [
+        "c",
+        "o",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha12"
+    },
+    {
+      "number": 13,
+      "factor_name": "gtja191_013",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "sqrt(h * l) - vwap",
+      "required_symbols": [
+        "h",
+        "l",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha13"
+    },
+    {
+      "number": 14,
+      "factor_name": "gtja191_014",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "delta(c, 5)",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha14"
+    },
+    {
+      "number": 15,
+      "factor_name": "gtja191_015",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "o / delay(c, 1) - 1",
+      "required_symbols": [
+        "c",
+        "o"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha15"
+    },
+    {
+      "number": 16,
+      "factor_name": "gtja191_016",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * ts_max(rank_cs(ts_corr(rank_cs(vol), rank_cs(vwap), 5)), 5)",
+      "required_symbols": [
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha16"
+    },
+    {
+      "number": 17,
+      "factor_name": "gtja191_017",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "rank_cs(vwap - ts_max(vwap, 15)) ** delta(c, 5)",
+      "required_symbols": [
+        "c",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha17"
+    },
+    {
+      "number": 18,
+      "factor_name": "gtja191_018",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "c / delay(c, 5)",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha18"
+    },
+    {
+      "number": 19,
+      "factor_name": "gtja191_019",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "where(c < delay(c, 5), (c - delay(c, 5)) / delay(c, 5), where(c == delay(c, 5), 0.0, (c - delay(c, 5)) / c))",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha19"
+    },
+    {
+      "number": 20,
+      "factor_name": "gtja191_020",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "delta(c, 6) / delay(c, 6) * 100",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha20"
+    },
+    {
+      "number": 21,
+      "factor_name": "gtja191_021",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_linear_reg_slope(ts_mean(c, 6), 6)",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha21"
+    },
+    {
+      "number": 22,
+      "factor_name": "gtja191_022",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sma((c - ts_mean(c, 6)) / ts_mean(c, 6) - delay((c - ts_mean(c, 6)) / ts_mean(c, 6), 3), 12, 1)",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha22"
+    },
+    {
+      "number": 23,
+      "factor_name": "gtja191_023",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sma(where(c > delay(c, 1), ts_std(c, 20), 0.0), 20, 1) / (ts_sma(where(c > delay(c, 1), ts_std(c, 20), 0.0), 20, 1) + ts_sma(where(c <= delay(c, 1), ts_std(c, 20), 0.0), 20, 1)) * 100",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha23"
+    },
+    {
+      "number": 24,
+      "factor_name": "gtja191_024",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sma(delta(c, 5), 5, 1)",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha24"
+    },
+    {
+      "number": 25,
+      "factor_name": "gtja191_025",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * rank_cs(delta(c, 7) * (1 - rank_cs(decay_linear(vol / ts_mean(vol, 20), 9)))) * (1 + rank_cs(ts_sum(pct(c, 1), 250)))",
+      "required_symbols": [
+        "c",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha25"
+    },
+    {
+      "number": 26,
+      "factor_name": "gtja191_026",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_mean(c, 7) - c + ts_corr(vwap, delay(c, 5), 230)",
+      "required_symbols": [
+        "c",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha26"
+    },
+    {
+      "number": 27,
+      "factor_name": "gtja191_027",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "decay_linear(delta(c, 3) / delay(c, 3) * 100 + delta(c, 6) / delay(c, 6) * 100, 12)",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha27"
+    },
+    {
+      "number": 28,
+      "factor_name": "gtja191_028",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "3 * ts_sma((c - ts_min(l, 9)) / (ts_max(h, 9) - ts_min(l, 9) * 100), 3, 1) - 2 * ts_sma(ts_sma((c - ts_min(l, 9)) / (ts_max(h, 9) - ts_min(l, 9) * 100), 3, 1), 3, 1)",
+      "required_symbols": [
+        "c",
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha28"
+    },
+    {
+      "number": 29,
+      "factor_name": "gtja191_029",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "delta(c, 6) / delay(c, 6) * vol",
+      "required_symbols": [
+        "c",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha29"
+    },
+    {
+      "number": 31,
+      "factor_name": "gtja191_031",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "(c - ts_mean(c, 12)) / ts_mean(c, 12) * 100",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha31"
+    },
+    {
+      "number": 32,
+      "factor_name": "gtja191_032",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * ts_sum(rank_cs(ts_corr(rank_cs(h), rank_cs(vol), 3)), 3)",
+      "required_symbols": [
+        "h",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha32"
+    },
+    {
+      "number": 33,
+      "factor_name": "gtja191_033",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "(-1 * ts_min(l, 5) + delay(ts_min(l, 5), 5)) * rank_cs(ts_sum(pct(c, 1), 240) - ts_sum(pct(c, 1), 20) / 220) * ts_rank(vol, 5)",
+      "required_symbols": [
+        "c",
+        "l",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha33"
+    },
+    {
+      "number": 34,
+      "factor_name": "gtja191_034",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_mean(c, 12) / c",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha34"
+    },
+    {
+      "number": 35,
+      "factor_name": "gtja191_035",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * np.minimum(rank_cs(decay_linear(delta(o, 1), 15)), rank_cs(decay_linear(ts_corr(vol, o * 0.65 + o * 0.35, 17), 7)))",
+      "required_symbols": [
+        "o",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha35"
+    },
+    {
+      "number": 36,
+      "factor_name": "gtja191_036",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "rank_cs(ts_sum(ts_corr(rank_cs(vol), rank_cs(vwap), 6), 2))",
+      "required_symbols": [
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha36"
+    },
+    {
+      "number": 37,
+      "factor_name": "gtja191_037",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * rank_cs(ts_sum(o, 5) * ts_sum(pct(c, 1), 5) - delay(ts_sum(o, 5) * ts_sum(pct(c, 1), 5), 10))",
+      "required_symbols": [
+        "c",
+        "o"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha37"
+    },
+    {
+      "number": 38,
+      "factor_name": "gtja191_038",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "where(ts_mean(h, 20) < h, -1 * delta(h, 2), 0.0)",
+      "required_symbols": [
+        "h"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha38"
+    },
+    {
+      "number": 39,
+      "factor_name": "gtja191_039",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * (rank_cs(decay_linear(delta(c, 2), 8)) - rank_cs(decay_linear(ts_corr(vwap * 0.3 + o * 0.7, ts_sum(ts_mean(vol, 180), 37), 14), 12)))",
+      "required_symbols": [
+        "c",
+        "o",
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha39"
+    },
+    {
+      "number": 40,
+      "factor_name": "gtja191_040",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sum(where(c > delay(c, 1), vol, 0.0), 26) / ts_sum(where(c <= delay(c, 1), vol, 0.0), 26) * 100",
+      "required_symbols": [
+        "c",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha40"
+    },
+    {
+      "number": 41,
+      "factor_name": "gtja191_041",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * rank_cs(ts_max(delta(vwap, 3), 5))",
+      "required_symbols": [
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha41"
+    },
+    {
+      "number": 42,
+      "factor_name": "gtja191_042",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * rank_cs(ts_std(h, 10)) * ts_corr(h, vol, 10)",
+      "required_symbols": [
+        "h",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha42"
+    },
+    {
+      "number": 43,
+      "factor_name": "gtja191_043",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sum(where(c > delay(c, 1), vol, where(c < delay(c, 1), -vol, 0.0)), 6)",
+      "required_symbols": [
+        "c",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha43"
+    },
+    {
+      "number": 44,
+      "factor_name": "gtja191_044",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_rank(decay_linear(ts_corr(l, ts_mean(vol, 10), 7), 6), 4) + ts_rank(decay_linear(delta(vwap, 3), 10), 15)",
+      "required_symbols": [
+        "l",
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha44"
+    },
+    {
+      "number": 45,
+      "factor_name": "gtja191_045",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "rank_cs(delta(c * 0.6 + o * 0.4, 1)) * rank_cs(ts_corr(vwap, ts_mean(vol, 150), 15))",
+      "required_symbols": [
+        "c",
+        "o",
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha45"
+    },
+    {
+      "number": 46,
+      "factor_name": "gtja191_046",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "(ts_mean(c, 3) + ts_mean(c, 6) + ts_mean(c, 12) + ts_mean(c, 24)) / (4 * c)",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha46"
+    },
+    {
+      "number": 47,
+      "factor_name": "gtja191_047",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sma((ts_max(h, 6) - c) / (ts_max(h, 6) - ts_min(l, 6)) * 100, 9, 1)",
+      "required_symbols": [
+        "c",
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha47"
+    },
+    {
+      "number": 48,
+      "factor_name": "gtja191_048",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * rank_cs(sign(delta(c, 1)) + sign(delay(c, 1) - delay(c, 2)) + sign(delay(c, 2) - delay(c, 3))) * ts_sum(vol, 5) / ts_sum(vol, 20)",
+      "required_symbols": [
+        "c",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha48"
+    },
+    {
+      "number": 49,
+      "factor_name": "gtja191_049",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sum(where((h + l) >= (delay(h, 1) + delay(l, 1)), 0.0, np.maximum(abs(h - delay(h, 1)), abs(l - delay(l, 1)))), 12) / (ts_sum(where((h + l) >= (delay(h, 1) + delay(l, 1)), 0.0, np.maximum(abs(h - delay(h, 1)), abs(l - delay(l, 1)))), 12) + ts_sum(where((h + l) <= (delay(h, 1) + delay(l, 1)), 0.0, np.maximum(abs(h - delay(h, 1)), abs(l - delay(l, 1)))), 12))",
+      "required_symbols": [
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha49"
+    },
+    {
+      "number": 50,
+      "factor_name": "gtja191_050",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sum(where((h + l) <= (delay(h, 1) + delay(l, 1)), 0.0, np.maximum(abs(h - delay(h, 1)), abs(l - delay(l, 1)))), 12) / (ts_sum(where((h + l) <= (delay(h, 1) + delay(l, 1)), 0.0, np.maximum(abs(h - delay(h, 1)), abs(l - delay(l, 1)))), 12) + ts_sum(where((h + l) >= (delay(h, 1) + delay(l, 1)), 0.0, np.maximum(abs(h - delay(h, 1)), abs(l - delay(l, 1)))), 12)) - ts_sum(where((h + l) >= (delay(h, 1) + delay(l, 1)), 0.0, np.maximum(abs(h - delay(h, 1)), abs(l - delay(l, 1)))), 12) / (ts_sum(where((h + l) <= (delay(h, 1) + delay(l, 1)), 0.0, np.maximum(abs(h - delay(h, 1)), abs(l - delay(l, 1)))), 12) + ts_sum(where((h + l) >= (delay(h, 1) + delay(l, 1)), 0.0, np.maximum(abs(h - delay(h, 1)), abs(l - delay(l, 1)))), 12))",
+      "required_symbols": [
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha50"
+    },
+    {
+      "number": 51,
+      "factor_name": "gtja191_051",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sum(where((h + l) <= (delay(h, 1) + delay(l, 1)), 0.0, np.maximum(abs(h - delay(h, 1)), abs(l - delay(l, 1)))), 12) / (ts_sum(where((h + l) <= (delay(h, 1) + delay(l, 1)), 0.0, np.maximum(abs(h - delay(h, 1)), abs(l - delay(l, 1)))), 12) + ts_sum(where((h + l) >= (delay(h, 1) + delay(l, 1)), 0.0, np.maximum(abs(h - delay(h, 1)), abs(l - delay(l, 1)))), 12))",
+      "required_symbols": [
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha51"
+    },
+    {
+      "number": 52,
+      "factor_name": "gtja191_052",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sum(np.maximum(0.0, h - delay((h + l + c) / 3, 1)), 26) / ts_sum(np.maximum(0.0, delay((h + l + c) / 3, 1) - l), 26) * 100",
+      "required_symbols": [
+        "c",
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha52"
+    },
+    {
+      "number": 53,
+      "factor_name": "gtja191_053",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_count(c > delay(c, 1), 12) / 12 * 100",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha53"
+    },
+    {
+      "number": 54,
+      "factor_name": "gtja191_054",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * rank_cs(ts_std(abs(c - o), 10) + (c - o) + ts_corr(c, o, 10))",
+      "required_symbols": [
+        "c",
+        "o"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha54"
+    },
+    {
+      "number": 55,
+      "factor_name": "gtja191_055",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sum((16 * (c - delay(c, 1) + (c - o) / 2 + delay(c, 1) - delay(o, 1)) / where((abs(h - delay(c, 1)) > abs(l - delay(c, 1))) & (abs(h - delay(c, 1)) > abs(h - delay(l, 1))), abs(h - delay(c, 1)) + abs(l - delay(c, 1)) / 2 + abs(delay(c, 1) - delay(o, 1)) / 4, where((abs(l - delay(c, 1)) > abs(h - delay(l, 1))) & (abs(l - delay(c, 1)) > abs(h - delay(c, 1))), abs(l - delay(c, 1)) + abs(h - delay(l, 1)) / 2 + abs(delay(c, 1) - delay(o, 1)) / 4, abs(h - delay(l, 1)) + abs(delay(c, 1) - delay(o, 1)) / 4))) * np.maximum(abs(h - delay(c, 1)), abs(l - delay(c, 1))), 20)",
+      "required_symbols": [
+        "c",
+        "h",
+        "l",
+        "o"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha55"
+    },
+    {
+      "number": 56,
+      "factor_name": "gtja191_056",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "where(rank_cs(o - ts_min(o, 12)) < rank_cs(rank_cs(ts_corr(ts_sum((h + l) / 2, 19), ts_sum(ts_mean(vol, 40), 19), 13)) ** 5), 1.0, 0.0)",
+      "required_symbols": [
+        "h",
+        "l",
+        "o",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha56"
+    },
+    {
+      "number": 57,
+      "factor_name": "gtja191_057",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sma((c - ts_min(l, 9)) / (ts_max(h, 9) - ts_min(l, 9)) * 100, 3, 1)",
+      "required_symbols": [
+        "c",
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha57"
+    },
+    {
+      "number": 58,
+      "factor_name": "gtja191_058",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_count(c > delay(c, 1), 20) / 20 * 100",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha58"
+    },
+    {
+      "number": 59,
+      "factor_name": "gtja191_059",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sum(where(c == delay(c, 1), 0.0, c - where(c > delay(c, 1), np.minimum(l, delay(c, 1)), np.maximum(h, delay(c, 1)))), 20)",
+      "required_symbols": [
+        "c",
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha59"
+    },
+    {
+      "number": 60,
+      "factor_name": "gtja191_060",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sum((c - l - (h - c)) / (h - l) * vol, 20)",
+      "required_symbols": [
+        "c",
+        "h",
+        "l",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha60"
+    },
+    {
+      "number": 61,
+      "factor_name": "gtja191_061",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * np.maximum(rank_cs(decay_linear(delta(vwap, 1), 12)), rank_cs(decay_linear(rank_cs(ts_corr(l, ts_mean(vol, 80), 8)), 17)))",
+      "required_symbols": [
+        "l",
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha61"
+    },
+    {
+      "number": 62,
+      "factor_name": "gtja191_062",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * ts_corr(h, rank_cs(vol), 5)",
+      "required_symbols": [
+        "h",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha62"
+    },
+    {
+      "number": 63,
+      "factor_name": "gtja191_063",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sma(np.maximum(delta(c, 1), 0.0), 6, 1) / ts_sma(abs(delta(c, 1)), 6, 1) * 100",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha63"
+    },
+    {
+      "number": 64,
+      "factor_name": "gtja191_064",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * np.maximum(rank_cs(decay_linear(ts_corr(rank_cs(vwap), rank_cs(vol), 4), 4)), rank_cs(decay_linear(np.maximum(ts_corr(rank_cs(c), rank_cs(ts_mean(vol, 60)), 4), 13.0), 14)))",
+      "required_symbols": [
+        "c",
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha64"
+    },
+    {
+      "number": 65,
+      "factor_name": "gtja191_065",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_mean(c, 6) / c",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha65"
+    },
+    {
+      "number": 66,
+      "factor_name": "gtja191_066",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "(c - ts_mean(c, 6)) / ts_mean(c, 6) * 100",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha66"
+    },
+    {
+      "number": 67,
+      "factor_name": "gtja191_067",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sma(np.maximum(delta(c, 1), 0.0), 24, 1) / ts_sma(abs(delta(c, 1)), 24, 1) * 100",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha67"
+    },
+    {
+      "number": 68,
+      "factor_name": "gtja191_068",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sma(((h + l) / 2 - (delay(h, 1) + delay(l, 1)) / 2) * (h - l) / vol, 15, 2)",
+      "required_symbols": [
+        "h",
+        "l",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha68"
+    },
+    {
+      "number": 69,
+      "factor_name": "gtja191_069",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "where(ts_sum(where(o <= delay(o, 1), 0.0, np.maximum(h - o, o - delay(o, 1))), 20) > ts_sum(where(o >= delay(o, 1), 0.0, np.maximum(o - l, o - delay(o, 1))), 20), (ts_sum(where(o <= delay(o, 1), 0.0, np.maximum(h - o, o - delay(o, 1))), 20) - ts_sum(where(o >= delay(o, 1), 0.0, np.maximum(o - l, o - delay(o, 1))), 20)) / ts_sum(where(o <= delay(o, 1), 0.0, np.maximum(h - o, o - delay(o, 1))), 20), where(ts_sum(where(o <= delay(o, 1), 0.0, np.maximum(h - o, o - delay(o, 1))), 20) == ts_sum(where(o >= delay(o, 1), 0.0, np.maximum(o - l, o - delay(o, 1))), 20), 0.0, (ts_sum(where(o <= delay(o, 1), 0.0, np.maximum(h - o, o - delay(o, 1))), 20) - ts_sum(where(o >= delay(o, 1), 0.0, np.maximum(o - l, o - delay(o, 1))), 20)) / ts_sum(where(o >= delay(o, 1), 0.0, np.maximum(o - l, o - delay(o, 1))), 20)))",
+      "required_symbols": [
+        "h",
+        "l",
+        "o"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha69"
+    },
+    {
+      "number": 70,
+      "factor_name": "gtja191_070",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_std(vol * vwap, 6)",
+      "required_symbols": [
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha70"
+    },
+    {
+      "number": 71,
+      "factor_name": "gtja191_071",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "(c - ts_mean(c, 24)) / ts_mean(c, 24) * 100",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha71"
+    },
+    {
+      "number": 72,
+      "factor_name": "gtja191_072",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sma((ts_max(h, 6) - c) / (ts_max(h, 6) - ts_min(l, 6)) * 100, 15, 1)",
+      "required_symbols": [
+        "c",
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha72"
+    },
+    {
+      "number": 73,
+      "factor_name": "gtja191_073",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * (ts_rank(decay_linear(decay_linear(ts_corr(c, vol, 10), 16), 4), 5) - rank_cs(decay_linear(ts_corr(vwap, ts_mean(vol, 30), 4), 3)))",
+      "required_symbols": [
+        "c",
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha73"
+    },
+    {
+      "number": 74,
+      "factor_name": "gtja191_074",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "rank_cs(ts_corr(ts_sum(l * 0.35 + vwap * 0.65, 20), ts_sum(ts_mean(vol, 40), 20), 7)) + rank_cs(ts_corr(rank_cs(vwap), rank_cs(vol), 6))",
+      "required_symbols": [
+        "l",
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha74"
+    },
+    {
+      "number": 76,
+      "factor_name": "gtja191_076",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_std(abs(c / delay(c, 1) - 1) / vol, 20) / ts_mean(abs(c / delay(c, 1) - 1) / vol, 20)",
+      "required_symbols": [
+        "c",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha76"
+    },
+    {
+      "number": 77,
+      "factor_name": "gtja191_077",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "np.minimum(rank_cs(decay_linear((h + l) / 2 + h - (vwap + h), 20)), rank_cs(decay_linear(ts_corr((h + l) / 2, ts_mean(vol, 40), 3), 6)))",
+      "required_symbols": [
+        "h",
+        "l",
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha77"
+    },
+    {
+      "number": 78,
+      "factor_name": "gtja191_078",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "((h + l + c) / 3 - ts_mean((h + l + c) / 3, 12)) / (0.015 * ts_mean(abs(c - ts_mean((h + l + c) / 3, 12)), 12))",
+      "required_symbols": [
+        "c",
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha78"
+    },
+    {
+      "number": 79,
+      "factor_name": "gtja191_079",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sma(np.maximum(delta(c, 1), 0.0), 12, 1) / ts_sma(abs(delta(c, 1)), 12, 1) * 100",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha79"
+    },
+    {
+      "number": 80,
+      "factor_name": "gtja191_080",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "delta(vol, 5) / delay(vol, 5) * 100",
+      "required_symbols": [
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha80"
+    },
+    {
+      "number": 81,
+      "factor_name": "gtja191_081",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sma(vol, 21, 1)",
+      "required_symbols": [
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha81"
+    },
+    {
+      "number": 82,
+      "factor_name": "gtja191_082",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sma((ts_max(h, 6) - c) / (ts_max(h, 6) - ts_min(l, 6)) * 100, 20, 1)",
+      "required_symbols": [
+        "c",
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha82"
+    },
+    {
+      "number": 83,
+      "factor_name": "gtja191_083",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * rank_cs(ts_cov(rank_cs(h), rank_cs(vol), 5))",
+      "required_symbols": [
+        "h",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha83"
+    },
+    {
+      "number": 84,
+      "factor_name": "gtja191_084",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sum(where(c > delay(c, 1), vol, where(c < delay(c, 1), -vol, 0.0)), 20)",
+      "required_symbols": [
+        "c",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha84"
+    },
+    {
+      "number": 85,
+      "factor_name": "gtja191_085",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_rank(vol / ts_mean(vol, 20), 20) * ts_rank(-1 * delta(c, 7), 8)",
+      "required_symbols": [
+        "c",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha85"
+    },
+    {
+      "number": 86,
+      "factor_name": "gtja191_086",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "where(0.25 < ((delay(c, 20) - delay(c, 10)) / 10 - (delay(c, 10) - c) / 10), -1.0, where(((delay(c, 20) - delay(c, 10)) / 10 - (delay(c, 10) - c) / 10) < 0, 1.0, -1 * delta(c, 1)))",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha86"
+    },
+    {
+      "number": 87,
+      "factor_name": "gtja191_087",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * (rank_cs(decay_linear(delta(vwap, 4), 7)) + ts_rank(decay_linear((l * 0.9 + l * 0.1 - vwap) / (o - (h + l) / 2), 11), 7))",
+      "required_symbols": [
+        "h",
+        "l",
+        "o",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha87"
+    },
+    {
+      "number": 88,
+      "factor_name": "gtja191_088",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "delta(c, 20) / delay(c, 20) * 100",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha88"
+    },
+    {
+      "number": 89,
+      "factor_name": "gtja191_089",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "2 * (ts_sma(c, 13, 2) - ts_sma(ts_sma(c, 13, 2), 27, 2) - ts_sma(ts_sma(c, 13, 2) - ts_sma(ts_sma(c, 13, 2), 27, 2), 10, 2))",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha89"
+    },
+    {
+      "number": 90,
+      "factor_name": "gtja191_090",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * rank_cs(ts_corr(rank_cs(vwap), rank_cs(vol), 5))",
+      "required_symbols": [
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha90"
+    },
+    {
+      "number": 91,
+      "factor_name": "gtja191_091",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * rank_cs(c - np.maximum(c, 5.0)) * rank_cs(ts_corr(ts_mean(vol, 40), l, 5))",
+      "required_symbols": [
+        "c",
+        "l",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha91"
+    },
+    {
+      "number": 92,
+      "factor_name": "gtja191_092",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * np.maximum(rank_cs(decay_linear(delta(c * 0.35 + vwap * 0.65, 2), 3)), ts_rank(decay_linear(abs(ts_corr(ts_mean(vol, 180), c, 13)), 5), 15))",
+      "required_symbols": [
+        "c",
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha92"
+    },
+    {
+      "number": 93,
+      "factor_name": "gtja191_093",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sum(where(o >= delay(o, 1), 0.0, np.maximum(o - l, o - delay(o, 1))), 20)",
+      "required_symbols": [
+        "l",
+        "o"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha93"
+    },
+    {
+      "number": 94,
+      "factor_name": "gtja191_094",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sum(where(c > delay(c, 1), vol, where(c < delay(c, 1), -vol, 0.0)), 30)",
+      "required_symbols": [
+        "c",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha94"
+    },
+    {
+      "number": 95,
+      "factor_name": "gtja191_095",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_std(vol * vwap, 20)",
+      "required_symbols": [
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha95"
+    },
+    {
+      "number": 96,
+      "factor_name": "gtja191_096",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sma(ts_sma((c - ts_min(l, 9)) / (ts_max(h, 9) - ts_min(l, 9)) * 100, 3, 1), 3, 1)",
+      "required_symbols": [
+        "c",
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha96"
+    },
+    {
+      "number": 97,
+      "factor_name": "gtja191_097",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_std(vol, 10)",
+      "required_symbols": [
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha97"
+    },
+    {
+      "number": 98,
+      "factor_name": "gtja191_098",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "where(((ts_mean(c, 100) - delay(ts_mean(c, 100), 100)) / delay(c, 100) < 0.05) | ((ts_mean(c, 100) - delay(ts_mean(c, 100), 100)) / delay(c, 100) == 0.05), -1 * (c - ts_min(c, 100)), -1 * delta(c, 3))",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha98"
+    },
+    {
+      "number": 99,
+      "factor_name": "gtja191_099",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * rank_cs(ts_cov(rank_cs(c), rank_cs(vol), 5))",
+      "required_symbols": [
+        "c",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha99"
+    },
+    {
+      "number": 100,
+      "factor_name": "gtja191_100",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_std(vol, 20)",
+      "required_symbols": [
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha100"
+    },
+    {
+      "number": 101,
+      "factor_name": "gtja191_101",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * where(rank_cs(ts_corr(c, ts_sum(ts_mean(vol, 30), 37), 15)) < rank_cs(ts_corr(rank_cs(h * 0.1 + vwap * 0.9), rank_cs(vol), 11)), 1.0, 0.0)",
+      "required_symbols": [
+        "c",
+        "h",
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha101"
+    },
+    {
+      "number": 102,
+      "factor_name": "gtja191_102",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sma(np.maximum(delta(vol, 1), 0.0), 6, 1) / ts_sma(abs(delta(vol, 1)), 6, 1) * 100",
+      "required_symbols": [
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha102"
+    },
+    {
+      "number": 103,
+      "factor_name": "gtja191_103",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_argmin(l, 20) / 20 * 100",
+      "required_symbols": [
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha103"
+    },
+    {
+      "number": 104,
+      "factor_name": "gtja191_104",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * delta(ts_corr(h, vol, 5), 4) * rank_cs(ts_std(c, 20))",
+      "required_symbols": [
+        "c",
+        "h",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha104"
+    },
+    {
+      "number": 105,
+      "factor_name": "gtja191_105",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * ts_corr(rank_cs(o), rank_cs(vol), 10)",
+      "required_symbols": [
+        "o",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha105"
+    },
+    {
+      "number": 106,
+      "factor_name": "gtja191_106",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "delta(c, 20)",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha106"
+    },
+    {
+      "number": 107,
+      "factor_name": "gtja191_107",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * rank_cs(o - delay(h, 1)) * rank_cs(o - delay(c, 1)) * rank_cs(o - delay(l, 1))",
+      "required_symbols": [
+        "c",
+        "h",
+        "l",
+        "o"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha107"
+    },
+    {
+      "number": 108,
+      "factor_name": "gtja191_108",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * (rank_cs(h - np.minimum(h, 2.0)) ** rank_cs(ts_corr(vwap, ts_mean(vol, 120), 6)))",
+      "required_symbols": [
+        "h",
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha108"
+    },
+    {
+      "number": 109,
+      "factor_name": "gtja191_109",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sma(h - l, 10, 2) / ts_sma(ts_sma(h - l, 10, 2), 10, 2)",
+      "required_symbols": [
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha109"
+    },
+    {
+      "number": 110,
+      "factor_name": "gtja191_110",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sum(np.maximum(0.0, h - delay(c, 1)), 20) / ts_sum(np.maximum(0.0, delay(c, 1) - l), 20) * 100",
+      "required_symbols": [
+        "c",
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha110"
+    },
+    {
+      "number": 111,
+      "factor_name": "gtja191_111",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sma(vol * ((c - l) - (h - c)) / (h - l), 11, 2) - ts_sma(vol * ((c - l) - (h - c)) / (h - l), 4, 2)",
+      "required_symbols": [
+        "c",
+        "h",
+        "l",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha111"
+    },
+    {
+      "number": 112,
+      "factor_name": "gtja191_112",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "(ts_sum(where(delta(c, 1) > 0, delta(c, 1), 0.0), 12) - ts_sum(where(delta(c, 1) < 0, abs(delta(c, 1)), 0.0), 12)) / (ts_sum(where(delta(c, 1) > 0, delta(c, 1), 0.0), 12) + ts_sum(where(delta(c, 1) < 0, abs(delta(c, 1)), 0.0), 12)) * 100",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha112"
+    },
+    {
+      "number": 113,
+      "factor_name": "gtja191_113",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * rank_cs(ts_sum(delay(c, 5), 20) / 20) * ts_corr(c, vol, 2) * rank_cs(ts_corr(ts_sum(c, 5), ts_sum(c, 20), 2))",
+      "required_symbols": [
+        "c",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha113"
+    },
+    {
+      "number": 114,
+      "factor_name": "gtja191_114",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "rank_cs(delay((h - l) / (ts_sum(c, 5) / 5), 2)) * rank_cs(rank_cs(vol)) / ((h - l) / (ts_sum(c, 5) / 5) / (vwap - c))",
+      "required_symbols": [
+        "c",
+        "h",
+        "l",
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha114"
+    },
+    {
+      "number": 115,
+      "factor_name": "gtja191_115",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "rank_cs(ts_corr(h * 0.9 + c * 0.1, ts_mean(vol, 30), 10)) ** rank_cs(ts_corr(ts_rank((h + l) / 2, 4), ts_rank(vol, 10), 7))",
+      "required_symbols": [
+        "c",
+        "h",
+        "l",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha115"
+    },
+    {
+      "number": 116,
+      "factor_name": "gtja191_116",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_linear_reg_slope(c, 20)",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha116"
+    },
+    {
+      "number": 117,
+      "factor_name": "gtja191_117",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_rank(vol, 32) * (1 - ts_rank(c + h - l, 16)) * (1 - ts_rank(pct(c, 1), 32))",
+      "required_symbols": [
+        "c",
+        "h",
+        "l",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha117"
+    },
+    {
+      "number": 118,
+      "factor_name": "gtja191_118",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sum(h - o, 20) / ts_sum(o - l, 20) * 100",
+      "required_symbols": [
+        "h",
+        "l",
+        "o"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha118"
+    },
+    {
+      "number": 119,
+      "factor_name": "gtja191_119",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "rank_cs(decay_linear(ts_corr(vwap, ts_sum(ts_mean(vol, 5), 26), 5), 7)) - rank_cs(decay_linear(ts_rank(np.minimum(ts_corr(rank_cs(o), rank_cs(ts_mean(vol, 15)), 21), 9.0), 7), 8))",
+      "required_symbols": [
+        "o",
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha119"
+    },
+    {
+      "number": 120,
+      "factor_name": "gtja191_120",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "rank_cs(vwap - c) / rank_cs(vwap + c)",
+      "required_symbols": [
+        "c",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha120"
+    },
+    {
+      "number": 121,
+      "factor_name": "gtja191_121",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * (rank_cs(vwap - np.minimum(vwap, 12.0)) ** ts_rank(ts_corr(ts_rank(vwap, 20), ts_rank(ts_mean(vol, 60), 2), 18), 3))",
+      "required_symbols": [
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha121"
+    },
+    {
+      "number": 122,
+      "factor_name": "gtja191_122",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "(ts_sma(ts_sma(ts_sma(log(c), 13, 2), 13, 2), 13, 2) - delay(ts_sma(ts_sma(ts_sma(log(c), 13, 2), 13, 2), 13, 2), 1)) / delay(ts_sma(ts_sma(ts_sma(log(c), 13, 2), 13, 2), 13, 2), 1)",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha122"
+    },
+    {
+      "number": 123,
+      "factor_name": "gtja191_123",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * where(rank_cs(ts_corr(ts_sum((h + l) / 2, 20), ts_sum(ts_mean(vol, 60), 20), 9)) < rank_cs(ts_corr(l, vol, 6)), 1.0, 0.0)",
+      "required_symbols": [
+        "h",
+        "l",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha123"
+    },
+    {
+      "number": 124,
+      "factor_name": "gtja191_124",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "(c - vwap) / decay_linear(rank_cs(ts_max(c, 30)), 2)",
+      "required_symbols": [
+        "c",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha124"
+    },
+    {
+      "number": 125,
+      "factor_name": "gtja191_125",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "rank_cs(decay_linear(ts_corr(vwap, ts_mean(vol, 80), 17), 20)) / rank_cs(decay_linear(delta(c * 0.5 + vwap * 0.5, 3), 16))",
+      "required_symbols": [
+        "c",
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha125"
+    },
+    {
+      "number": 126,
+      "factor_name": "gtja191_126",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "(c + h + l) / 3",
+      "required_symbols": [
+        "c",
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha126"
+    },
+    {
+      "number": 127,
+      "factor_name": "gtja191_127",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_mean((100 * (c - np.maximum(c, 12.0)) / np.maximum(c, 12.0)) ** 2, 12) ** 0.5",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha127"
+    },
+    {
+      "number": 128,
+      "factor_name": "gtja191_128",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "100 - 100 / (1 + ts_sum(where((h + l + c) / 3 > delay((h + l + c) / 3, 1), (h + l + c) / 3 * vol, 0.0), 14) / ts_sum(where((h + l + c) / 3 < delay((h + l + c) / 3, 1), (h + l + c) / 3 * vol, 0.0), 14))",
+      "required_symbols": [
+        "c",
+        "h",
+        "l",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha128"
+    },
+    {
+      "number": 129,
+      "factor_name": "gtja191_129",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sum(where(delta(c, 1) < 0, abs(delta(c, 1)), 0.0), 12)",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha129"
+    },
+    {
+      "number": 130,
+      "factor_name": "gtja191_130",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "rank_cs(decay_linear(ts_corr((h + l) / 2, ts_mean(vol, 40), 9), 10)) / rank_cs(decay_linear(ts_corr(rank_cs(vwap), rank_cs(vol), 7), 3))",
+      "required_symbols": [
+        "h",
+        "l",
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha130"
+    },
+    {
+      "number": 131,
+      "factor_name": "gtja191_131",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "rank_cs(delta(vwap, 1)) ** ts_rank(ts_corr(c, ts_mean(vol, 50), 18), 18)",
+      "required_symbols": [
+        "c",
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha131"
+    },
+    {
+      "number": 132,
+      "factor_name": "gtja191_132",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_mean(vol * vwap, 20)",
+      "required_symbols": [
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha132"
+    },
+    {
+      "number": 133,
+      "factor_name": "gtja191_133",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_argmax(h, 20) / 20 * 100 - ts_argmin(l, 20) / 20 * 100",
+      "required_symbols": [
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha133"
+    },
+    {
+      "number": 134,
+      "factor_name": "gtja191_134",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "delta(c, 12) / delay(c, 12) * vol",
+      "required_symbols": [
+        "c",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha134"
+    },
+    {
+      "number": 135,
+      "factor_name": "gtja191_135",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sma(delay(c / delay(c, 20), 1), 20, 1)",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha135"
+    },
+    {
+      "number": 136,
+      "factor_name": "gtja191_136",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * rank_cs(delta(pct(c, 1), 3)) * ts_corr(o, vol, 10)",
+      "required_symbols": [
+        "c",
+        "o",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha136"
+    },
+    {
+      "number": 137,
+      "factor_name": "gtja191_137",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "16 * (c - delay(c, 1) + (c - o) / 2 + delay(c, 1) - delay(o, 1)) / where((abs(h - delay(c, 1)) > abs(l - delay(c, 1))) & (abs(h - delay(c, 1)) > abs(h - delay(l, 1))), abs(h - delay(c, 1)) + abs(l - delay(c, 1)) / 2 + abs(delay(c, 1) - delay(o, 1)) / 4, where((abs(l - delay(c, 1)) > abs(h - delay(l, 1))) & (abs(l - delay(c, 1)) > abs(h - delay(c, 1))), abs(l - delay(c, 1)) + abs(h - delay(c, 1)) / 2 + abs(delay(c, 1) - delay(o, 1)) / 4, abs(h - delay(l, 1)) + abs(delay(c, 1) - delay(o, 1)) / 4)) * np.maximum(abs(h - delay(c, 1)), abs(l - delay(c, 1)))",
+      "required_symbols": [
+        "c",
+        "h",
+        "l",
+        "o"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha137"
+    },
+    {
+      "number": 138,
+      "factor_name": "gtja191_138",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * (rank_cs(decay_linear(delta(l * 0.7 + vwap * 0.3, 3), 20)) - ts_rank(decay_linear(ts_rank(ts_corr(ts_rank(l, 8), ts_rank(ts_mean(vol, 60), 17), 5), 19), 16), 7))",
+      "required_symbols": [
+        "l",
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha138"
+    },
+    {
+      "number": 139,
+      "factor_name": "gtja191_139",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * ts_corr(o, vol, 10)",
+      "required_symbols": [
+        "o",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha139"
+    },
+    {
+      "number": 140,
+      "factor_name": "gtja191_140",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "np.minimum(rank_cs(decay_linear(rank_cs(o) + rank_cs(l) - (rank_cs(h) + rank_cs(c)), 8)), ts_rank(decay_linear(ts_corr(ts_rank(c, 8), ts_rank(ts_mean(vol, 60), 20), 8), 7), 3))",
+      "required_symbols": [
+        "c",
+        "h",
+        "l",
+        "o",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha140"
+    },
+    {
+      "number": 141,
+      "factor_name": "gtja191_141",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * rank_cs(ts_corr(rank_cs(h), rank_cs(ts_mean(vol, 15)), 9))",
+      "required_symbols": [
+        "h",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha141"
+    },
+    {
+      "number": 142,
+      "factor_name": "gtja191_142",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * rank_cs(ts_rank(c, 10)) * rank_cs(delta(delta(c, 1), 1)) * rank_cs(ts_rank(vol / ts_mean(vol, 20), 5))",
+      "required_symbols": [
+        "c",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha142"
+    },
+    {
+      "number": 143,
+      "factor_name": "gtja191_143",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_accumulate_positive_return(c / delay(c, 1))",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha143"
+    },
+    {
+      "number": 144,
+      "factor_name": "gtja191_144",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sum(where(c < delay(c, 1), abs(c / delay(c, 1) - 1) / (vol * vwap), 0.0), 20) / ts_count(c < delay(c, 1), 20)",
+      "required_symbols": [
+        "c",
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha144"
+    },
+    {
+      "number": 145,
+      "factor_name": "gtja191_145",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "(ts_mean(vol, 9) - ts_mean(vol, 26)) / ts_mean(vol, 12) * 100",
+      "required_symbols": [
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha145"
+    },
+    {
+      "number": 146,
+      "factor_name": "gtja191_146",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_mean(pct(c, 1) - ts_sma(pct(c, 1), 61, 2), 20) * (pct(c, 1) - ts_sma(pct(c, 1), 61, 2)) / ts_sma((ts_sma(pct(c, 1), 61, 2)) ** 2, 60)",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha146"
+    },
+    {
+      "number": 147,
+      "factor_name": "gtja191_147",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_linear_reg_slope(ts_mean(c, 12), 12)",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha147"
+    },
+    {
+      "number": 148,
+      "factor_name": "gtja191_148",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * where(rank_cs(ts_corr(o, ts_sum(ts_mean(vol, 60), 9), 6)) < rank_cs(o - ts_min(o, 14)), 1.0, 0.0)",
+      "required_symbols": [
+        "o",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha148"
+    },
+    {
+      "number": 150,
+      "factor_name": "gtja191_150",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "(c + h + l) / 3 * vol",
+      "required_symbols": [
+        "c",
+        "h",
+        "l",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha150"
+    },
+    {
+      "number": 151,
+      "factor_name": "gtja191_151",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sma(delta(c, 20), 20, 1)",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha151"
+    },
+    {
+      "number": 152,
+      "factor_name": "gtja191_152",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sma(ts_mean(delay(ts_sma(delay(c / delay(c, 9), 1), 9, 1), 1), 12) - ts_mean(delay(ts_sma(delay(c / delay(c, 9), 1), 9, 1), 1), 26), 9, 1)",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha152"
+    },
+    {
+      "number": 153,
+      "factor_name": "gtja191_153",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "(ts_mean(c, 3) + ts_mean(c, 6) + ts_mean(c, 12) + ts_mean(c, 24)) / 4",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha153"
+    },
+    {
+      "number": 154,
+      "factor_name": "gtja191_154",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "where((vwap - np.minimum(vwap, 16.0)) < ts_corr(vwap, ts_mean(vol, 180), 18), 1.0, 0.0)",
+      "required_symbols": [
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha154"
+    },
+    {
+      "number": 155,
+      "factor_name": "gtja191_155",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sma(vol, 13, 2) - ts_sma(ts_sma(vol, 13, 2), 27, 2) - ts_sma(ts_sma(vol, 13, 2) - ts_sma(ts_sma(vol, 13, 2), 27, 2), 10, 2)",
+      "required_symbols": [
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha155"
+    },
+    {
+      "number": 156,
+      "factor_name": "gtja191_156",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * np.maximum(rank_cs(decay_linear(delta(vwap, 5), 3)), rank_cs(decay_linear(-1 * delta(o * 0.15 + l * 0.85, 2) / (o * 0.15 + l * 0.85), 3)))",
+      "required_symbols": [
+        "l",
+        "o",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha156"
+    },
+    {
+      "number": 157,
+      "factor_name": "gtja191_157",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "np.minimum(rank_cs(rank_cs(log(ts_min(rank_cs(rank_cs(-1 * rank_cs(delta(c - 1, 5)))), 2)))), 5.0) + ts_rank(delay(-1 * pct(c, 1), 6), 5)",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha157"
+    },
+    {
+      "number": 158,
+      "factor_name": "gtja191_158",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "((h - ts_sma(c, 15, 2)) - (l - ts_sma(c, 15, 2))) / c",
+      "required_symbols": [
+        "c",
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha158"
+    },
+    {
+      "number": 159,
+      "factor_name": "gtja191_159",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "((c - ts_sum(np.minimum(l, delay(c, 1)), 6)) / ts_sum(np.maximum(h, delay(c, 1)) - np.minimum(l, delay(c, 1)), 6) * 12 * 24 + (c - ts_sum(np.minimum(l, delay(c, 1)), 12)) / ts_sum(np.maximum(h, delay(c, 1)) - np.minimum(l, delay(c, 1)), 12) * 6 * 24 + (c - ts_sum(np.minimum(l, delay(c, 1)), 24)) / ts_sum(np.maximum(h, delay(c, 1)) - np.minimum(l, delay(c, 1)), 24) * 6 * 24) * 100 / (6 * 12 + 6 * 24 + 12 * 24)",
+      "required_symbols": [
+        "c",
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha159"
+    },
+    {
+      "number": 160,
+      "factor_name": "gtja191_160",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sma(where(c <= delay(c, 1), ts_std(c, 20), 0.0), 20, 1)",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha160"
+    },
+    {
+      "number": 161,
+      "factor_name": "gtja191_161",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_mean(np.maximum(np.maximum(h - l, abs(delay(c, 1) - h)), abs(delay(c, 1) - l)), 12)",
+      "required_symbols": [
+        "c",
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha161"
+    },
+    {
+      "number": 162,
+      "factor_name": "gtja191_162",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "(ts_sma(np.maximum(delta(c, 1), 0.0), 12, 1) / ts_sma(abs(delta(c, 1)), 12, 1) * 100 - ts_min(ts_sma(np.maximum(delta(c, 1), 0.0), 12, 1) / ts_sma(abs(delta(c, 1)), 12, 1) * 100, 12)) / (ts_max(ts_sma(np.maximum(delta(c, 1), 0.0), 12, 1) / ts_sma(abs(delta(c, 1)), 12, 1) * 100, 12) - ts_min(ts_sma(np.maximum(delta(c, 1), 0.0), 12, 1) / ts_sma(abs(delta(c, 1)), 12, 1) * 100, 12))",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha162"
+    },
+    {
+      "number": 163,
+      "factor_name": "gtja191_163",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "rank_cs(-1 * pct(c, 1) * ts_mean(vol, 20) * vwap * (h - c))",
+      "required_symbols": [
+        "c",
+        "h",
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha163"
+    },
+    {
+      "number": 164,
+      "factor_name": "gtja191_164",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sma((where(c > delay(c, 1), 1 / delta(c, 1), 1.0) - ts_min(where(c > delay(c, 1), 1 / delta(c, 1), 1.0), 12)) / (h - l) * 100, 13, 2)",
+      "required_symbols": [
+        "c",
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha164"
+    },
+    {
+      "number": 165,
+      "factor_name": "gtja191_165",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "(ts_max(ts_cum_sum(c - ts_mean(c, 48)), 48) - ts_min(ts_cum_sum(c - ts_mean(c, 48)), 48)) / ts_std(c, 48)",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha165"
+    },
+    {
+      "number": 166,
+      "factor_name": "gtja191_166",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-20 * (20 - 1) ** 1.5 * ts_sum(c / delay(c, 1) - 1 - ts_mean(c / delay(c, 1) - 1, 20), 20) / ((20 - 1) * (20 - 2) * (ts_sum(ts_mean(c / delay(c, 1), 20) ** 2, 20) ** 1.5))",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha166"
+    },
+    {
+      "number": 167,
+      "factor_name": "gtja191_167",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sum(where(delta(c, 1) > 0, delta(c, 1), 0.0), 12)",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha167"
+    },
+    {
+      "number": 168,
+      "factor_name": "gtja191_168",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * vol / ts_mean(vol, 20)",
+      "required_symbols": [
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha168"
+    },
+    {
+      "number": 169,
+      "factor_name": "gtja191_169",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sma(ts_mean(delay(ts_sma(delta(c, 1), 9, 1), 1), 12) - ts_mean(delay(ts_sma(delta(c, 1), 9, 1), 1), 26), 10, 1)",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha169"
+    },
+    {
+      "number": 170,
+      "factor_name": "gtja191_170",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "rank_cs(1 / c) * vol / ts_mean(vol, 20) * h * rank_cs(h - c) / ts_mean(h, 5) - rank_cs(delta(vwap, 5))",
+      "required_symbols": [
+        "c",
+        "h",
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha170"
+    },
+    {
+      "number": 171,
+      "factor_name": "gtja191_171",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "-1 * (l - c) * (o ** 5) / ((c - h) * (c ** 5))",
+      "required_symbols": [
+        "c",
+        "h",
+        "l",
+        "o"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha171"
+    },
+    {
+      "number": 172,
+      "factor_name": "gtja191_172",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_mean(abs((ts_sum(where((delay(l, 1) - l > 0) & (delay(l, 1) - l > h - delay(h, 1)), delay(l, 1) - l, 0.0), 14) * 100 / ts_sum(np.maximum(np.maximum(h - l, abs(h - delay(c, 1))), abs(l - delay(c, 1))), 14) - ts_sum(where((h - delay(h, 1) > 0) & (h - delay(h, 1) > delay(l, 1) - l), h - delay(h, 1), 0.0), 14) * 100 / ts_sum(np.maximum(np.maximum(h - l, abs(h - delay(c, 1))), abs(l - delay(c, 1))), 14)) / (ts_sum(where((delay(l, 1) - l > 0) & (delay(l, 1) - l > h - delay(h, 1)), delay(l, 1) - l, 0.0), 14) * 100 / ts_sum(np.maximum(np.maximum(h - l, abs(h - delay(c, 1))), abs(l - delay(c, 1))), 14) + ts_sum(where((h - delay(h, 1) > 0) & (h - delay(h, 1) > delay(l, 1) - l), h - delay(h, 1), 0.0), 14) * 100 / ts_sum(np.maximum(np.maximum(h - l, abs(h - delay(c, 1))), abs(l - delay(c, 1))), 14)) * 100), 6)",
+      "required_symbols": [
+        "c",
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha172"
+    },
+    {
+      "number": 173,
+      "factor_name": "gtja191_173",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "3 * ts_sma(c, 13, 2) - 2 * ts_sma(ts_sma(c, 13, 2), 13, 2) + ts_sma(ts_sma(c, 13, 2), 13, 2)",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha173"
+    },
+    {
+      "number": 174,
+      "factor_name": "gtja191_174",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sma(where(c > delay(c, 1), ts_std(c, 20), 0.0), 20, 1)",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha174"
+    },
+    {
+      "number": 175,
+      "factor_name": "gtja191_175",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_mean(np.maximum(np.maximum(h - l, abs(delay(c, 1) - h)), abs(delay(c, 1) - l)), 6)",
+      "required_symbols": [
+        "c",
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha175"
+    },
+    {
+      "number": 176,
+      "factor_name": "gtja191_176",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_corr(rank_cs((c - ts_min(l, 12)) / (ts_max(h, 12) - ts_min(l, 12))), rank_cs(vol), 6)",
+      "required_symbols": [
+        "c",
+        "h",
+        "l",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha176"
+    },
+    {
+      "number": 177,
+      "factor_name": "gtja191_177",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_argmax(h, 20) / 20 * 100",
+      "required_symbols": [
+        "h"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha177"
+    },
+    {
+      "number": 178,
+      "factor_name": "gtja191_178",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "pct(c, 1) * vol",
+      "required_symbols": [
+        "c",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha178"
+    },
+    {
+      "number": 179,
+      "factor_name": "gtja191_179",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "rank_cs(ts_corr(vwap, vol, 4)) * rank_cs(ts_corr(rank_cs(l), rank_cs(ts_mean(vol, 50)), 12))",
+      "required_symbols": [
+        "l",
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "source_function": "gtjaAlpha179"
+    },
+    {
+      "number": 180,
+      "factor_name": "gtja191_180",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "where(ts_mean(vol, 20) < vol, -1 * ts_rank(abs(delta(c, 7)), 60) * sign(delta(c, 7)), -1 * vol)",
+      "required_symbols": [
+        "c",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha180"
+    },
+    {
+      "number": 183,
+      "factor_name": "gtja191_183",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "(ts_max(ts_cum_sum(c - ts_mean(c, 24)), 24) - ts_min(ts_cum_sum(c - ts_mean(c, 24)), 24)) / ts_std(c, 24)",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha183"
+    },
+    {
+      "number": 184,
+      "factor_name": "gtja191_184",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "rank_cs(ts_corr(delay(o - c, 1), c, 200)) + rank_cs(o - c)",
+      "required_symbols": [
+        "c",
+        "o"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha184"
+    },
+    {
+      "number": 185,
+      "factor_name": "gtja191_185",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "rank_cs(-1 * (1 - o / c) ** 2)",
+      "required_symbols": [
+        "c",
+        "o"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha185"
+    },
+    {
+      "number": 186,
+      "factor_name": "gtja191_186",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "(ts_mean(abs((ts_sum(where((delay(l, 1) - l > 0) & (delay(l, 1) - l > h - delay(h, 1)), delay(l, 1) - l, 0.0), 14) * 100 / ts_sum(np.maximum(np.maximum(h - l, abs(h - delay(c, 1))), abs(l - delay(c, 1))), 14) - ts_sum(where((h - delay(h, 1) > 0) & (h - delay(h, 1) > delay(l, 1) - l), h - delay(h, 1), 0.0), 14) * 100 / ts_sum(np.maximum(np.maximum(h - l, abs(h - delay(c, 1))), abs(l - delay(c, 1))), 14)) / (ts_sum(where((delay(l, 1) - l > 0) & (delay(l, 1) - l > h - delay(h, 1)), delay(l, 1) - l, 0.0), 14) * 100 / ts_sum(np.maximum(np.maximum(h - l, abs(h - delay(c, 1))), abs(l - delay(c, 1))), 14) + ts_sum(where((h - delay(h, 1) > 0) & (h - delay(h, 1) > delay(l, 1) - l), h - delay(h, 1), 0.0), 14) * 100 / ts_sum(np.maximum(np.maximum(h - l, abs(h - delay(c, 1))), abs(l - delay(c, 1))), 14)) * 100), 6) + delay(ts_mean(abs((ts_sum(where((delay(l, 1) - l > 0) & (delay(l, 1) - l > h - delay(h, 1)), delay(l, 1) - l, 0.0), 14) * 100 / ts_sum(np.maximum(np.maximum(h - l, abs(h - delay(c, 1))), abs(l - delay(c, 1))), 14) - ts_sum(where((h - delay(h, 1) > 0) & (h - delay(h, 1) > delay(l, 1) - l), h - delay(h, 1), 0.0), 14) * 100 / ts_sum(np.maximum(np.maximum(h - l, abs(h - delay(c, 1))), abs(l - delay(c, 1))), 14)) / (ts_sum(where((delay(l, 1) - l > 0) & (delay(l, 1) - l > h - delay(h, 1)), delay(l, 1) - l, 0.0), 14) * 100 / ts_sum(np.maximum(np.maximum(h - l, abs(h - delay(c, 1))), abs(l - delay(c, 1))), 14) + ts_sum(where((h - delay(h, 1) > 0) & (h - delay(h, 1) > delay(l, 1) - l), h - delay(h, 1), 0.0), 14) * 100 / ts_sum(np.maximum(np.maximum(h - l, abs(h - delay(c, 1))), abs(l - delay(c, 1))), 14)) * 100), 6), 6)) / 2",
+      "required_symbols": [
+        "c",
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha186"
+    },
+    {
+      "number": 187,
+      "factor_name": "gtja191_187",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_sum(where(o <= delay(o, 1), 0.0, np.maximum(h - o, o - delay(o, 1))), 20)",
+      "required_symbols": [
+        "h",
+        "o"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha187"
+    },
+    {
+      "number": 188,
+      "factor_name": "gtja191_188",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "(h - l - ts_sma(h - l, 11, 2)) / ts_sma(h - l, 11, 2) * 100",
+      "required_symbols": [
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha188"
+    },
+    {
+      "number": 189,
+      "factor_name": "gtja191_189",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_mean(abs(c - ts_mean(c, 6)), 6)",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha189"
+    },
+    {
+      "number": 190,
+      "factor_name": "gtja191_190",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "log(((ts_count(c / delay(c, 1) - 1 > (c / delay(c, 19)) ** (1 / 20) - 1, 20) - 1) * ts_sum((c / delay(c, 1) - (c / delay(c, 19)) ** (1 / 20)) ** 2 * where(c / delay(c, 1) - 1 < (c / delay(c, 19)) ** (1 / 20) - 1, 1.0, 0.0), 20)) / (ts_count(c / delay(c, 1) - 1 < (c / delay(c, 19)) ** (1 / 20) - 1, 20) * ts_sum((c / delay(c, 1) - (c / delay(c, 19)) ** (1 / 20)) ** 2 * where(c / delay(c, 1) - 1 > (c / delay(c, 19)) ** (1 / 20) - 1, 1.0, 0.0), 20)))",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha190"
+    },
+    {
+      "number": 191,
+      "factor_name": "gtja191_191",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "implementation_set": "runnable",
+      "project": "国泰君安191",
+      "expression": "ts_corr(ts_mean(vol, 20), l, 5) + (h + l) / 2 - c",
+      "required_symbols": [
+        "c",
+        "h",
+        "l",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "source_function": "gtjaAlpha191"
+    }
+  ]
+}

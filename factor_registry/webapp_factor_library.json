@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "batch_id": "webapp_factor_library",
+  "batch_name": "Web 平台因子库",
+  "batch_version": 6,
+  "generated_at": "2026-07-17T14:29:55+08:00",
+  "source": {
+    "type": "webapp",
+    "name": "Factor evaluation web platform",
+    "notes": "User-submitted production factor definitions"
+  },
+  "formula_language": "engine expression",
+  "factor_count": 5,
+  "factors": [
+    {
+      "number": 1,
+      "factor_name": "alpha101_027_vwap_proxy",
+      "entered_at": "2026-07-03T09:55:33+08:00",
+      "updated_at": "2026-07-10T16:00:39+08:00",
+      "implementation_set": "submitted",
+      "project": "Alpha101",
+      "expression": "where(0.5 < rank_cs(ts_sum(ts_corr(rank_cs(vol), rank_cs(vwap), 6), 2) / 2.0), -1.0, 1.0)",
+      "paper_expression": "((0.5 < rank((sum(correlation(rank(volume), rank(vwap), 6), 2) / 2.0))) ? (-1 * 1) : 1)",
+      "required_symbols": [
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "submitted_at": "2026-07-10T16:00:39+08:00",
+      "source_batch_id": "alpha101_runnable_factors",
+      "source_factor_name": "alpha101_027_vwap_proxy"
+    },
+    {
+      "number": 2,
+      "factor_name": "alpha101_042_vwap_proxy",
+      "entered_at": "2026-07-03T09:55:33+08:00",
+      "updated_at": "2026-07-10T16:00:58+08:00",
+      "implementation_set": "submitted",
+      "project": "Alpha101",
+      "expression": "(rank_cs(vwap - c) / rank_cs(vwap + c))",
+      "paper_expression": "(rank((vwap - close)) / rank((vwap + close)))",
+      "required_symbols": [
+        "c",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "submitted_at": "2026-07-10T16:00:58+08:00",
+      "source_batch_id": "alpha101_runnable_factors",
+      "source_factor_name": "alpha101_042_vwap_proxy"
+    },
+    {
+      "number": 3,
+      "factor_name": "invers_61",
+      "entered_at": "2026-07-09T15:58:55+08:00",
+      "updated_at": "2026-07-10T16:01:08+08:00",
+      "implementation_set": "submitted",
+      "project": "自定义因子",
+      "expression": "-(rank_cs(vwap - ts_min(vwap, 16.1219)) < rank_cs(ts_corr(vwap, adv(amt, 180), 17.9282)))",
+      "paper_expression": "",
+      "required_symbols": [
+        "amt",
+        "vwap"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "submitted_at": "2026-07-10T16:01:08+08:00",
+      "source_batch_id": "webapp_test_factors",
+      "source_factor_name": "invers_61"
+    },
+    {
+      "number": 4,
+      "factor_name": "alpha101_074_vwap_proxy",
+      "entered_at": "2026-07-03T09:55:33+08:00",
+      "updated_at": "2026-07-13T12:52:32+08:00",
+      "implementation_set": "submitted",
+      "project": "Alpha101",
+      "expression": "((rank_cs(ts_corr(c, ts_sum(adv(amt, 30), 37.4843), 15.1365)) < rank_cs(ts_corr(rank_cs((h * 0.0261661) + (vwap * (1 - 0.0261661))), rank_cs(vol), 11.4791))) * -1)",
+      "paper_expression": "((rank(correlation(close, sum(adv30, 37.4843), 15.1365)) < rank(correlation(rank(((high * 0.0261661) + (vwap * (1 - 0.0261661)))), rank(volume), 11.4791))) * -1)",
+      "required_symbols": [
+        "amt",
+        "c",
+        "h",
+        "vol",
+        "vwap"
+      ],
+      "uses_proxy": true,
+      "proxy_description": "vwap is vwap_proxy_df.pq = (high + low) / 2",
+      "submitted_at": "2026-07-13T12:52:32+08:00",
+      "source_batch_id": "alpha101_runnable_factors",
+      "source_factor_name": "alpha101_074_vwap_proxy"
+    },
+    {
+      "number": 5,
+      "factor_name": "gtja191_127",
+      "entered_at": "2026-07-17T00:00:00+08:00",
+      "updated_at": "2026-07-17T14:29:52+08:00",
+      "implementation_set": "submitted",
+      "project": "国泰君安191",
+      "expression": "ts_mean((100 * (c - np.maximum(c, 12.0)) / np.maximum(c, 12.0)) ** 2, 12) ** 0.5",
+      "paper_expression": "",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": "",
+      "submitted_at": "2026-07-17T14:29:52+08:00",
+      "source_batch_id": "gtja191_runnable_factors",
+      "source_factor_name": "gtja191_127"
+    }
+  ]
+}

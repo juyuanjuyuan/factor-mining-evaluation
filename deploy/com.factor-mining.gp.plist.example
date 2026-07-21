@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.factor-mining.gp</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/huangjuyuan/miniforge3/envs/rdagent/bin/python</string>
+    <string>/Users/huangjuyuan/Desktop/因子挖掘:评价/scripts/run_gp_factor_mining.py</string>
+    <string>--campaign</string>
+    <string>paper2019_daily</string>
+    <string>--train-start</string>
+    <string>2013-01-14</string>
+    <string>--train-end</string>
+    <string>2019-09-30</string>
+    <string>--test-start</string>
+    <string>2019-10-10</string>
+    <string>--test-end</string>
+    <string>2026-07-10</string>
+    <string>--population-size</string>
+    <string>1000</string>
+    <string>--generations</string>
+    <string>3</string>
+    <string>--hall-of-fame</string>
+    <string>100</string>
+    <string>--components</string>
+    <string>10</string>
+    <string>--n-jobs</string>
+    <string>2</string>
+    <string>--forever</string>
+    <string>--pause-seconds</string>
+    <string>60</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/huangjuyuan/Desktop/因子挖掘:评价</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>MPLCONFIGDIR</key>
+    <string>/private/tmp/matplotlib</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
+  <key>Nice</key>
+  <integer>10</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/huangjuyuan/Desktop/因子挖掘:评价/outputs/gp_factor_mining.launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/huangjuyuan/Desktop/因子挖掘:评价/outputs/gp_factor_mining.launchd.err.log</string>
+</dict>
+</plist>

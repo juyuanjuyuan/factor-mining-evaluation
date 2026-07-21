@@ -1,0 +1,28 @@
+# 构建镜像时排除大文件与本地产物，缩小构建上下文、加快 docker build
+
+# 行情数据由 docker-compose 以挂载卷提供，不进镜像（避免 500MB+ 构建上下文）
+data/
+
+# 本地历史评价产物与运行状态
+outputs/
+
+# 前端依赖与本地构建产物（镜像内在 frontend 阶段重新构建）
+webapp/frontend/node_modules/
+webapp/frontend/dist/
+webapp/frontend/*.tsbuildinfo
+
+# Python 缓存与虚拟环境
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 杂项
+.git/
+.DS_Store
+tmp/
+notebooks/
+*.pdf

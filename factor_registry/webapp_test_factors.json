@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "batch_id": "webapp_test_factors",
+  "batch_name": "Web 平台测试因子",
+  "batch_version": 8,
+  "generated_at": "2026-07-19T15:39:01+08:00",
+  "source": {
+    "type": "webapp",
+    "name": "Factor evaluation web platform",
+    "notes": "User-maintained test factor definitions"
+  },
+  "formula_language": "engine expression",
+  "factor_count": 7,
+  "factors": [
+    {
+      "number": 1,
+      "factor_name": "invers_61",
+      "entered_at": "2026-07-09T15:58:55+08:00",
+      "updated_at": "2026-07-09T15:58:55+08:00",
+      "implementation_set": "webapp_test",
+      "project": "自定义因子",
+      "expression": "-(rank_cs(vwap - ts_min(vwap, 16.1219)) < rank_cs(ts_corr(vwap, adv(amt, 180), 17.9282)))",
+      "paper_expression": "",
+      "required_symbols": [
+        "amt",
+        "vwap"
+      ],
+      "uses_proxy": false,
+      "proxy_description": ""
+    },
+    {
+      "number": 2,
+      "factor_name": "inverse_guotai_002",
+      "entered_at": "2026-07-17T13:53:15+08:00",
+      "updated_at": "2026-07-17T13:53:15+08:00",
+      "implementation_set": "webapp_test",
+      "project": "自定义因子",
+      "expression": "1 * delta(((c - l) - (h - c)) / (h - l), 1)",
+      "paper_expression": "",
+      "required_symbols": [
+        "c",
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": ""
+    },
+    {
+      "number": 3,
+      "factor_name": "inverse_guotai_003",
+      "entered_at": "2026-07-17T13:53:57+08:00",
+      "updated_at": "2026-07-17T13:53:57+08:00",
+      "implementation_set": "webapp_test",
+      "project": "自定义因子",
+      "expression": "-ts_sum(where(c == delay(c, 1), 0.0, c - where(c > delay(c, 1), np.minimum(l, delay(c, 1)), np.maximum(h, delay(c, 1)))), 6)",
+      "paper_expression": "",
+      "required_symbols": [
+        "c",
+        "h",
+        "l"
+      ],
+      "uses_proxy": false,
+      "proxy_description": ""
+    },
+    {
+      "number": 4,
+      "factor_name": "inverse_guotai_018",
+      "entered_at": "2026-07-17T13:57:09+08:00",
+      "updated_at": "2026-07-17T13:57:09+08:00",
+      "implementation_set": "webapp_test",
+      "project": "自定义因子",
+      "expression": "-c / delay(c, 5)",
+      "paper_expression": "",
+      "required_symbols": [
+        "c"
+      ],
+      "uses_proxy": false,
+      "proxy_description": ""
+    },
+    {
+      "number": 5,
+      "factor_name": "inverse_guotai_029",
+      "entered_at": "2026-07-17T14:00:51+08:00",
+      "updated_at": "2026-07-17T14:00:51+08:00",
+      "implementation_set": "webapp_test",
+      "project": "自定义因子",
+      "expression": "- delta(c, 6) / delay(c, 6) * vol",
+      "paper_expression": "",
+      "required_symbols": [
+        "c",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": ""
+    },
+    {
+      "number": 6,
+      "factor_name": "rd-agent_001",
+      "entered_at": "2026-07-19T15:37:29+08:00",
+      "updated_at": "2026-07-19T15:37:29+08:00",
+      "implementation_set": "webapp_test",
+      "project": "rd-agent",
+      "expression": "(ts_mean(vol, 20) - ts_mean(vol, 40)) / ts_std(vol, 40)",
+      "paper_expression": "",
+      "required_symbols": [
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": ""
+    },
+    {
+      "number": 7,
+      "factor_name": "rd-agent_001_inverse",
+      "entered_at": "2026-07-19T15:39:01+08:00",
+      "updated_at": "2026-07-19T15:39:01+08:00",
+      "implementation_set": "webapp_test",
+      "project": "rd-agent",
+      "expression": "-(ts_mean(vol, 20) - ts_mean(vol, 40)) / ts_std(vol, 40)",
+      "paper_expression": "",
+      "required_symbols": [
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": ""
+    }
+  ]
+}

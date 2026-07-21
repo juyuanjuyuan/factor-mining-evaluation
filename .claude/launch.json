@@ -1,0 +1,27 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "factor-webapp",
+      "runtimeExecutable": "/Users/huangjuyuan/miniforge3/envs/rdagent/bin/python",
+      "runtimeArgs": [
+        "-m",
+        "uvicorn",
+        "--app-dir",
+        "webapp/server",
+        "app.main:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000"
+      ],
+      "port": 8000
+    },
+    {
+      "name": "factor-frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "webapp/frontend", "run", "dev"],
+      "port": 5173
+    }
+  ]
+}

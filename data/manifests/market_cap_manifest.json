@@ -1,0 +1,18 @@
+{
+  "generated_at": "2026-07-01T14:28:32+08:00",
+  "output": "/Users/huangjuyuan/Desktop/因子挖掘:评价/data/market_cap_df.pq",
+  "source": "/Users/huangjuyuan/Desktop/因子挖掘:评价/通联-股票市值.pq",
+  "source_format": "long(day, code, values)",
+  "meaning": "total market capitalization",
+  "shape": [
+    3265,
+    5536
+  ],
+  "start_date": "2013-01-14 00:00:00",
+  "end_date": "2026-06-26 00:00:00",
+  "source_start_date": "2014-01-02 00:00:00",
+  "source_end_date": "2026-06-30 00:00:00",
+  "non_null_cells": 11990491,
+  "total_cells": 18075040,
+  "coverage": 0.6633728611388965
+}
