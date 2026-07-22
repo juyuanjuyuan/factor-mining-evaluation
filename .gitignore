@@ -13,3 +13,7 @@ outputs/webapp/
 # 可再生成的评价产物不进入版本库。
 outputs/
 tmp/
+
+# 本地因子库：由 Webapp 运行时维护，不同步到版本库。
+factor_registry/webapp_factor_library.json
+factor_registry/webapp_test_factors.json
