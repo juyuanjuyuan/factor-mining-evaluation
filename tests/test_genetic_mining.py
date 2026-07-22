@@ -218,13 +218,10 @@ def test_resumable_single_cycle_smoke() -> None:
             test_end=str(days[-1].date()),
             data_dir=data_dir,
             output_dir=root / "outputs",
-            library_file=root / "factor_library.json",
-            correlation_state_dir=root / "state",
             evolution=evolution,
             n_quantiles=5,
             preprocess_mode="none",
             minimum_ic_days=20,
-            admit=False,
         )
         runner = GeneticMiningRunner(config)
         try:
@@ -250,7 +247,9 @@ def test_resumable_single_cycle_smoke() -> None:
         assert (config.root / "cycles/cycle_000001/cycle_summary.json").is_file()
         assert summary["candidates"][0]["status"] == "completed"
         assert set(summary["candidates"][0]["standard_gates"]) == {"profitability_test"}
-        assert not summary["candidates"][0]["admitted"]
+        assert "admission" not in summary["candidates"][0]
+        assert "admitted" not in summary["candidates"][0]
+        assert "admitted_count" not in summary
 
 
 def test_profitability_screen_runs_ic_only_for_survivors() -> None:
@@ -268,8 +267,6 @@ def test_profitability_screen_runs_ic_only_for_survivors() -> None:
             test_end=str(days[-1].date()),
             data_dir=data_dir,
             output_dir=root / "outputs",
-            library_file=root / "factor_library.json",
-            correlation_state_dir=root / "state",
             evolution=EvolutionConfig(
                 generations=1,
                 population_size=2,
@@ -280,7 +277,6 @@ def test_profitability_screen_runs_ic_only_for_survivors() -> None:
             ),
             preprocess_mode="none",
             minimum_ic_days=20,
-            admit=False,
         )
         component = lambda expression: ScoredTree(
             tree=ExpressionTree("terminal", expression),
@@ -302,7 +298,7 @@ def test_profitability_screen_runs_ic_only_for_survivors() -> None:
         def fake_evaluate_factor_standards(*, expression, standards, **_kwargs):
             standard = next(iter(standards))
             calls.append((expression, standard))
-            passed = expression == "o" and standard == "profitability_test"
+            passed = expression == "o"
             return {
                 "overall_passed": passed,
                 "summary_path": f"/{expression}/{standard}.json",
@@ -332,11 +328,24 @@ def test_profitability_screen_runs_ic_only_for_survivors() -> None:
         assert set(records[0]["standard_gates"]) == {"profitability_test"}
         assert records[1]["profitability_passed"] is True
         assert records[1]["ic_checked"] is True
-        assert records[1]["ic_passed"] is False
+        assert records[1]["ic_passed"] is True
+        assert records[1]["test_overall_passed"] is True
+        assert records[1]["factor_library_submission_requested"] is True
         assert set(records[1]["standard_gates"]) == {
             "profitability_test",
             "ic_test",
         }
+        request_path = (
+            config.root
+            / "cycles/cycle_000001/candidates"
+            / records[1]["factor_name"]
+            / "factor_library_submission_request.json"
+        )
+        request = json.loads(request_path.read_text(encoding="utf-8"))
+        assert request["factor_name"] == records[1]["factor_name"]
+        assert request["expression"] == "o"
+        assert request["testing_protocol"] == config.test_screening_protocol
+        assert not request_path.with_name("factor_library_submission.json").exists()
 
 
 def test_correlation_gated_library_admission() -> None:

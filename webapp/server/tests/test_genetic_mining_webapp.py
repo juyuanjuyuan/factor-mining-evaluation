@@ -60,6 +60,21 @@ class FakeProcessFactory:
         return process
 
 
+class FakeFactorLibrary:
+    def __init__(self):
+        self.requests: list[dict[str, Any]] = []
+
+    def submit_gp_candidate(self, request: dict[str, Any]) -> dict[str, Any]:
+        self.requests.append(dict(request))
+        return {
+            "status": "admitted",
+            "factor_name": request["factor_name"],
+            "correlation_checked": True,
+            "correlation_passed": True,
+            "formal_batch_id": "webapp_factor_library",
+        }
+
+
 def main() -> None:
     with TemporaryDirectory() as temporary:
         root = Path(temporary)
@@ -79,7 +94,12 @@ def main() -> None:
             frontend_dist=PROJECT_ROOT / "webapp" / "frontend" / "dist",
         )
         factory = FakeProcessFactory()
-        supervisor = GeneticMiningSupervisor(settings, process_factory=factory)
+        factor_library = FakeFactorLibrary()
+        supervisor = GeneticMiningSupervisor(
+            settings,
+            process_factory=factory,
+            registry=factor_library,
+        )
         app = FastAPI()
         app.include_router(genetic_campaigns.router, prefix="/api")
         app.dependency_overrides[get_genetic_supervisor] = lambda: supervisor
@@ -102,7 +122,6 @@ def main() -> None:
             "seed": 7,
             "continuous": False,
             "pause_seconds": 0,
-            "admit": False,
         }
         with TestClient(app) as client:
             backends = client.get("/api/genetic-campaigns/backends")
@@ -121,7 +140,9 @@ def main() -> None:
             assert command[command.index("--campaign") + 1] == "web_gp_contract"
             assert command[command.index("--compute-backend") + 1] == "cpu"
             assert command[command.index("--preprocess-mode") + 1] == "market_cap_industry"
-            assert "--no-admit" in command
+            assert "--library-file" not in command
+            assert "--correlation-state-dir" not in command
+            assert "--no-admit" not in command
             assert "--forever" not in command
             assert factory.calls[0][1]["start_new_session"] is True
 
@@ -149,10 +170,54 @@ def main() -> None:
                 + "\n",
                 encoding="utf-8",
             )
+            candidate_name = "gp_web_contract_001"
+            candidate_root = cycle_root / "candidates" / candidate_name
+            candidate_root.mkdir(parents=True)
+            (candidate_root / "factor_library_submission_request.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "factor_name": candidate_name,
+                        "expression": "c",
+                        "project": "遗传规划",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (cycle_root / "cycle_summary.json").write_text(
+                json.dumps(
+                    {
+                        "cycle": 1,
+                        "status": "completed",
+                        "test_passed_count": 1,
+                        "failed_count": 0,
+                        "candidates": [
+                            {
+                                "factor_name": candidate_name,
+                                "expression": "c",
+                                "test_overall_passed": True,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
             progress = client.get("/api/genetic-campaigns/web_gp_contract").json()
             assert progress["current_generation_completed"] == 1
             assert progress["current_generation_total"] == 2
             assert progress["current_generation_progress"] == 0.5
+            assert factor_library.requests == [
+                {
+                    "schema_version": 1,
+                    "factor_name": candidate_name,
+                    "expression": "c",
+                    "project": "遗传规划",
+                }
+            ]
+            assert progress["factor_library_admitted_count"] == 1
+            assert progress["latest_cycle"]["candidates"][0][
+                "factor_library_submission"
+            ]["status"] == "admitted"
 
             listed = client.get("/api/genetic-campaigns")
             assert listed.status_code == 200

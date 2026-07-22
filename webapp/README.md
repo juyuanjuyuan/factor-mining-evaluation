@@ -49,8 +49,9 @@ MPLCONFIGDIR=/private/tmp/matplotlib \
 - 新增因子默认保存到 `factor_registry/webapp_test_factors.json`，历史
   `webapp_custom_factors.json` 会继续作为测试库读取。
 - `/factors` 的“遗传算法添加因子”使用独立 GP 进程，不阻塞评价 worker。页面可以配置
-  训练/测试边界、论文默认进化参数、自动入库和连续 cycle，并查看 checkpoint、测试门槛、
-  候选与入库结果。GP 输出写入 `outputs/gp_factor_mining/<campaign>/`。
+  训练/测试边界、论文默认进化参数和连续 cycle，并查看 checkpoint、测试门槛与通过测试的
+  候选。通过测试后会交接给因子库服务；后者执行相关性检验并决定是否正式入库。GP 输出写入
+  `outputs/gp_factor_mining/<campaign>/`。
 
 ## 验证
 

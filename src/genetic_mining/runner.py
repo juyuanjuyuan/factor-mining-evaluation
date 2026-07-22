@@ -1,4 +1,4 @@
-"""Resumable train-mine/test-gate/admit orchestration for continuous GP search."""
+"""Resumable train-mine/test-gate orchestration for continuous GP search."""
 
 from __future__ import annotations
 
@@ -23,9 +23,6 @@ from evaluation_standards import (
     PROFITABILITY_STANDARD_NAME,
     evaluate_factor_standards,
 )
-from factor_correlation import CORRELATION_THRESHOLD
-
-from .admission import admit_factor_to_library
 from .evolution import (
     EvolutionConfig,
     ScoredTree,
@@ -77,7 +74,7 @@ def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-TEST_SCREENING_PROTOCOL = "profitability_then_ic_joint_neutral_v1"
+TEST_SCREENING_PROTOCOL = "profitability_then_ic_joint_neutral_v3_factor_library_handoff"
 
 
 @dataclass(frozen=True)
@@ -89,8 +86,6 @@ class MiningCampaignConfig:
     test_end: str
     data_dir: Path
     output_dir: Path
-    library_file: Path
-    correlation_state_dir: Path
     evolution: EvolutionConfig = EvolutionConfig()
     horizon: int = 1
     n_quantiles: int = 10
@@ -100,15 +95,12 @@ class MiningCampaignConfig:
     minimum_ic_mean: float = 0.0
     minimum_rolling_sharpe_60_median: float = 1.0
     minimum_annualized_return: float = 0.30
-    correlation_threshold: float = CORRELATION_THRESHOLD
     seed: int = 20190610
-    admit: bool = True
-    project: str = "遗传规划"
     test_screening_protocol: str = TEST_SCREENING_PROTOCOL
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "campaign", _slug(self.campaign))
-        for name in ("data_dir", "output_dir", "library_file", "correlation_state_dir"):
+        for name in ("data_dir", "output_dir"):
             object.__setattr__(self, name, Path(getattr(self, name)).expanduser().resolve())
         train_start = np.datetime64(self.train_start)
         train_end = np.datetime64(self.train_end)
@@ -124,8 +116,6 @@ class MiningCampaignConfig:
             raise ValueError("significance_level must be strictly between zero and one")
         if self.test_screening_protocol != TEST_SCREENING_PROTOCOL:
             raise ValueError("Unknown GP test-screening protocol")
-        if not 0 < self.correlation_threshold < 1:
-            raise ValueError("correlation_threshold must be between zero and one")
 
     @property
     def root(self) -> Path:
@@ -135,8 +125,6 @@ class MiningCampaignConfig:
         payload = asdict(self)
         payload["data_dir"] = str(self.data_dir)
         payload["output_dir"] = str(self.output_dir)
-        payload["library_file"] = str(self.library_file)
-        payload["correlation_state_dir"] = str(self.correlation_state_dir)
         payload["evolution"] = self.evolution.as_dict()
         return payload
 
@@ -475,24 +463,6 @@ class GeneticMiningRunner:
                     )
                 ic_passed = bool(ic and ic["overall_passed"])
                 test_overall_passed = profitability_passed and ic_passed
-                admission: dict[str, Any] | None = None
-                if test_overall_passed and self.config.admit:
-                    admission = admit_factor_to_library(
-                        factor_name=name,
-                        expression=component.fitness.expression,
-                        library_file=self.config.library_file,
-                        data_dir=self.config.data_dir,
-                        state_dir=self.config.correlation_state_dir,
-                        project=self.config.project,
-                        source_batch_id=f"gp_{self.config.campaign}",
-                        source_factor_name=name,
-                        notes=(
-                            f"GP cycle {cycle}; train {self.config.train_start}.."
-                            f"{self.config.train_end}; test {self.config.test_start}.."
-                            f"{self.config.test_end}; frozen expression"
-                        ),
-                        correlation_threshold=self.config.correlation_threshold,
-                    ).as_dict()
                 record = {
                     "factor_name": name,
                     "expression": component.fitness.expression,
@@ -502,6 +472,7 @@ class GeneticMiningRunner:
                     "ic_checked": ic is not None,
                     "ic_passed": ic_passed if ic is not None else None,
                     "test_overall_passed": test_overall_passed,
+                    "factor_library_submission_requested": test_overall_passed,
                     "profitability_summary_path": profitability["summary_path"],
                     "ic_summary_path": ic["summary_path"] if ic else None,
                     "standard_gates": {
@@ -510,14 +481,24 @@ class GeneticMiningRunner:
                         if result is not None
                         for key, value in result["standards"].items()
                     },
-                    "admission": admission,
-                    "admitted": bool(
-                        admission
-                        and (admission["admitted"] or admission["already_present"])
-                    ),
                     "status": "completed",
                     "completed_at": _now(),
                 }
+                if test_overall_passed:
+                    _atomic_json(
+                        candidate_dir / "factor_library_submission_request.json",
+                        {
+                            "schema_version": 1,
+                            "factor_name": name,
+                            "expression": component.fitness.expression,
+                            "project": "遗传规划",
+                            "source_campaign": self.config.campaign,
+                            "source_cycle": cycle,
+                            "source_candidate": name,
+                            "testing_protocol": TEST_SCREENING_PROTOCOL,
+                            "requested_at": record["completed_at"],
+                        },
+                    )
             except Exception as exc:
                 record = {
                     "factor_name": name,
@@ -528,8 +509,7 @@ class GeneticMiningRunner:
                     "ic_checked": False,
                     "ic_passed": None,
                     "test_overall_passed": False,
-                    "admission": None,
-                    "admitted": False,
+                    "factor_library_submission_requested": False,
                     "status": "failed",
                     "error": f"{type(exc).__name__}: {exc}",
                     "completed_at": _now(),
@@ -573,7 +553,6 @@ class GeneticMiningRunner:
             "test_passed_count": sum(
                 bool(item.get("test_overall_passed")) for item in candidates
             ),
-            "admitted_count": sum(bool(item.get("admitted")) for item in candidates),
             "failed_count": sum(item.get("status") == "failed" for item in candidates),
             "selection_audit": selection_audit,
             "candidates": candidates,
@@ -615,7 +594,6 @@ class GeneticMiningRunner:
                             "cycle": summary["cycle"],
                             "status": summary["status"],
                             "test_passed_count": summary["test_passed_count"],
-                            "admitted_count": summary["admitted_count"],
                         },
                         ensure_ascii=False,
                     ),

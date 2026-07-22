@@ -38,7 +38,10 @@ async def lifespan(app: FastAPI):
         "true",
         "yes",
     }:
-        genetic_supervisor = GeneticMiningSupervisor(settings)
+        genetic_supervisor = GeneticMiningSupervisor(
+            settings,
+            registry=app.state.registry,
+        )
         genetic_supervisor.start()
     app.state.genetic_supervisor = genetic_supervisor
     try:

@@ -725,6 +725,38 @@ def main() -> None:
         assert service.delete("webapp_test_factors", "duplicate_web_test_factor")
         assert not (registry_dir / "webapp_test_factors.json").exists()
 
+        gp_registry_dir = temporary_root / "gp-handoff-registry"
+        gp_registry_dir.mkdir()
+        gp_service = RegistryService(
+            Settings(
+                project_root=PROJECT_ROOT,
+                data_dir=data_dir,
+                registry_dir=gp_registry_dir,
+                state_dir=temporary_root / "gp-handoff-state",
+                frontend_dist=PROJECT_ROOT / "webapp" / "frontend" / "dist",
+            )
+        )
+        gp_admitted = gp_service.submit_gp_candidate(
+            {
+                "factor_name": "gp_handoff_first",
+                "expression": "rank_cs(delta(c, 5))",
+                "project": "遗传规划",
+            }
+        )
+        assert gp_admitted["status"] == "admitted"
+        assert gp_admitted["correlation_passed"] is True
+        gp_rejected = gp_service.submit_gp_candidate(
+            {
+                "factor_name": "gp_handoff_duplicate",
+                "expression": "rank_cs(delta(c, 5))",
+                "project": "遗传规划",
+            }
+        )
+        assert gp_rejected["status"] == "rejected_correlation"
+        assert gp_rejected["correlation_passed"] is False
+        assert gp_service.find("webapp_test_factors", "gp_handoff_duplicate")
+        assert not gp_service.find("webapp_factor_library", "gp_handoff_duplicate")
+
         funnel_settings = Settings(
             project_root=PROJECT_ROOT,
             data_dir=data_dir,

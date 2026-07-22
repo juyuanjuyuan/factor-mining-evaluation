@@ -1,6 +1,5 @@
 import {
   BranchesOutlined,
-  CheckCircleOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
   ReloadOutlined,
@@ -26,11 +25,10 @@ import {
   Statistic,
   Steps,
   Tag,
-  Tooltip,
   Typography,
   message,
 } from 'antd'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { GeneticCampaign, GeneticCampaignInput, api } from '../api/client'
 import { shortTime } from '../lib/metrics'
 
@@ -85,8 +83,10 @@ function defaultDates(days: string[]) {
 
 function campaignStep(campaign: GeneticCampaign) {
   if (campaign.status === 'succeeded') return 4
+  if (campaign.current_stage === 'running') return 0
   if (campaign.current_stage === 'testing') return 1
-  if (campaign.admitted_count > 0 || campaign.latest_cycle) return 3
+  if (campaign.factor_library_pending_count > 0) return 3
+  if (campaign.latest_cycle) return 4
   return 0
 }
 
@@ -101,7 +101,18 @@ function CandidateRows({ campaign }: { campaign: GeneticCampaign }) {
         const profitPassed = Boolean(candidate.standard_gates?.profitability_test?.passed)
         const icChecked = candidate.ic_checked === true || candidate.standard_gates?.ic_test !== undefined
         const icPassed = Boolean(candidate.standard_gates?.ic_test?.passed)
-        const correlationRejected = candidate.admission?.correlation_passed === false
+        const submission = candidate.factor_library_submission
+        const submissionTag = !candidate.test_overall_passed
+          ? { color: candidate.status === 'failed' ? 'red' : 'default', text: candidate.status === 'failed' ? '测试异常' : '未通过测试' }
+          : submission?.status === 'admitted'
+            ? { color: 'green', text: submission.already_present ? '已在因子库' : '因子库已入库' }
+            : submission?.status === 'rejected_correlation'
+              ? { color: 'orange', text: '因子库相关性未通过' }
+              : submission?.status === 'failed' || submission?.status === 'name_conflict'
+                ? { color: 'red', text: '因子库提交失败' }
+                : candidate.factor_library_submission_requested !== true
+                  ? { color: 'gold', text: '旧任务：未交接因子库' }
+                  : { color: 'blue', text: '已提交因子库，等待相关性检验' }
         return (
           <div className="gp-candidate-row" key={candidate.factor_name}>
             <div>
@@ -115,17 +126,9 @@ function CandidateRows({ campaign }: { campaign: GeneticCampaign }) {
               <Tag color={!icChecked ? 'default' : icPassed ? 'green' : 'red'}>
                 IC {!icChecked ? '未检' : icPassed ? '通过' : '未通过'}
               </Tag>
-              <Tooltip title={candidate.admission?.explanation}>
-                <Tag color={candidate.admitted ? 'green' : correlationRejected ? 'orange' : 'default'}>
-                  {candidate.admitted
-                    ? '已入库'
-                    : correlationRejected
-                      ? '相关性未通过'
-                      : campaign.config.admit && candidate.test_overall_passed
-                        ? '未入库'
-                        : '未提交'}
-                </Tag>
-              </Tooltip>
+              <Tag color={submissionTag.color}>
+                {submissionTag.text}
+              </Tag>
             </Space>
           </div>
         )
@@ -170,7 +173,6 @@ function CampaignCard({ campaign }: { campaign: GeneticCampaign }) {
             <Tag color={campaign.config.compute_backend === 'mps' ? 'purple' : 'default'}>
               {campaign.config.compute_backend === 'mps' ? 'Apple GPU / MPS' : 'CPU'}
             </Tag>
-            {!campaign.config.admit && <Tag color="gold">仅挖掘不入库</Tag>}
           </Space>
           <Typography.Text type="secondary" className="gp-campaign-dates">
             训练 {campaign.config.train_start} ~ {campaign.config.train_end} · 测试 {campaign.config.test_start} ~ {campaign.config.test_end}
@@ -192,6 +194,15 @@ function CampaignCard({ campaign }: { campaign: GeneticCampaign }) {
           )}
         </Space>
       </Flex>
+      {campaign.legacy_auto_admission && (
+        <Alert
+          className="gp-contract-alert"
+          type="warning"
+          showIcon
+          message="这是旧版自动入库 campaign"
+          description="旧进程会在 GP 内直接执行相关性准入。请停止后以新名称创建任务；新版只向因子库服务交接通过测试的因子，由因子库完成相关性检验与入库裁决。"
+        />
+      )}
       <Steps
         size="small"
         current={campaignStep(campaign)}
@@ -200,7 +211,7 @@ function CampaignCard({ campaign }: { campaign: GeneticCampaign }) {
           { title: '训练集进化', description: currentGeneration || '等待种群计算' },
           { title: '测试集盈利标准', description: campaign.current_stage === 'testing' ? '先筛冻结表达式' : '市值+行业中性化后的净分组收益' },
           { title: '测试集 IC', description: '仅对盈利存活者检测' },
-          { title: '相关性准入', description: '|ρ| ≤ 0.75' },
+          { title: '提交因子库', description: '因子库负责相关性检验与入库裁决' },
           { title: '完成本轮', description: `${campaign.completed_cycles} 个 cycle` },
         ]}
       />
@@ -219,7 +230,8 @@ function CampaignCard({ campaign }: { campaign: GeneticCampaign }) {
       <div className="gp-campaign-stats">
         <Statistic title="当前 cycle" value={campaign.current_cycle ?? '—'} />
         <Statistic title="测试通过" value={campaign.test_passed_count} />
-        <Statistic title="成功入库" value={campaign.admitted_count} valueStyle={campaign.admitted_count ? { color: '#008A3E' } : undefined} />
+        <Statistic title="因子库已入库" value={campaign.factor_library_admitted_count} valueStyle={campaign.factor_library_admitted_count ? { color: '#008A3E' } : undefined} />
+        <Statistic title="因子库相关性未通过" value={campaign.factor_library_rejected_count} />
         <Statistic title="候选失败" value={campaign.failed_candidate_count} />
       </div>
       <Collapse
@@ -238,8 +250,7 @@ function CampaignCard({ campaign }: { campaign: GeneticCampaign }) {
               <>
                 <Descriptions size="small" column={{ xs: 1, sm: 2, md: 3 }}>
                   <Descriptions.Item label="种群/代数">{campaign.config.population_size} / {campaign.config.generations}</Descriptions.Item>
-                  <Descriptions.Item label="Hall of Fame（训练 fitness）">{campaign.config.hall_of_fame}</Descriptions.Item>
-                  <Descriptions.Item label="冻结测试候选（按 fitness 排序）">{campaign.config.components}</Descriptions.Item>
+                  <Descriptions.Item label="冻结测试候选（训练 fitness 前 N）">{campaign.config.components}</Descriptions.Item>
                   <Descriptions.Item label="预处理">{preprocessLabel[campaign.config.preprocess_mode] || campaign.config.preprocess_mode}</Descriptions.Item>
                   <Descriptions.Item label="训练后端">{campaign.config.compute_backend === 'mps' ? 'MPS / Apple GPU' : 'CPU'}</Descriptions.Item>
                   <Descriptions.Item label="CPU 线程">{campaign.config.n_jobs}</Descriptions.Item>
@@ -273,16 +284,6 @@ export function GeneticMiningPanel({ open, onOpen, onClose }: { open: boolean; o
   })
   const continuous = Form.useWatch('continuous', form)
   const computeBackend = Form.useWatch('compute_backend', form)
-  const admittedCount = useMemo(
-    () => (campaigns.data || []).reduce((total, campaign) => total + campaign.admitted_count, 0),
-    [campaigns.data],
-  )
-  useEffect(() => {
-    if (admittedCount > 0) {
-      queryClient.invalidateQueries({ queryKey: ['factors'] })
-      queryClient.invalidateQueries({ queryKey: ['factor-correlation'] })
-    }
-  }, [admittedCount, queryClient])
   useEffect(() => {
     if (!open || !timeline.data?.trading_days.length) return
     const dates = defaultDates(timeline.data.trading_days)
@@ -304,7 +305,6 @@ export function GeneticMiningPanel({ open, onOpen, onClose }: { open: boolean; o
       continuous: false,
       pause_seconds: 60,
       max_cycles: null,
-      admit: true,
     })
   }, [backends.data, form, open, timeline.data])
   useEffect(() => {
@@ -315,6 +315,9 @@ export function GeneticMiningPanel({ open, onOpen, onClose }: { open: boolean; o
   const create = useMutation({
     mutationFn: (values: GeneticCampaignInput) => api.createGeneticCampaign({
       ...values,
+      // The current GP protocol freezes exactly the training-fitness top N.
+      // Keep the legacy CLI fields aligned instead of exposing two copies of N.
+      components: values.hall_of_fame,
       max_cycles: values.continuous ? values.max_cycles || null : null,
     }),
     onSuccess: (campaign) => {
@@ -376,14 +379,14 @@ export function GeneticMiningPanel({ open, onOpen, onClose }: { open: boolean; o
         open={open}
         onClose={onClose}
         destroyOnHidden
-        extra={<Tag color="blue">训练挖掘 / 测试准入</Tag>}
+        extra={<Tag color="blue">训练挖掘 / 测试筛选</Tag>}
       >
         <Alert
           className="gp-contract-alert"
           type="info"
           showIcon
           message="冻结训练/测试边界"
-          description="训练集只用于表达式进化和候选去重。冻结后的表达式先用市值+行业中性化后的净分组收益筛选；仅盈利存活者再做测试集 IC 检测。两关均通过后，才进行 |ρ| ≤ 0.75 的正式因子库准入。"
+          description="训练集只用于表达式进化和候选去重。冻结后的表达式先用市值+行业中性化后的净分组收益筛选；仅盈利存活者再做测试集 IC 检测。两关均通过后会自动交接给因子库；相关性检验和是否正式入库均由因子库流程裁决，GP 不执行。"
         />
         {active && (
           <Alert
@@ -424,7 +427,7 @@ export function GeneticMiningPanel({ open, onOpen, onClose }: { open: boolean; o
             type="warning"
             showIcon
             message="固定测试集反复筛选会逐渐变成验证集"
-            description="连续挖掘适合构建候选库；若需要最终无偏结论，应另留一段不参与自动准入的最终留出期。"
+            description="连续挖掘适合构建候选库；若需要最终无偏结论，应另留一段不参与 GP 测试筛选的最终留出期。"
           />
           <div className="gp-parameter-grid">
             <Form.Item label="收益周期 H" name="horizon" rules={[{ required: true }]}>
@@ -474,14 +477,11 @@ export function GeneticMiningPanel({ open, onOpen, onClose }: { open: boolean; o
                     <Form.Item label="进化代数" name="generations" rules={[{ required: true }]}>
                       <InputNumber min={1} max={100} />
                     </Form.Item>
-                    <Form.Item label="Hall of Fame（跨各代训练 fitness 前 N）" name="hall_of_fame" rules={[{ required: true }]}>
-                      <InputNumber min={1} max={5000} />
-                    </Form.Item>
                     <Form.Item
-                      label="进入冻结测试的候选数"
-                      name="components"
+                      label="冻结测试候选数（跨各代训练 fitness 前 N）"
+                      name="hall_of_fame"
                       rules={[{ required: true }]}
-                      extra="按训练 fitness 排序直接取前 N；HOF 内不做相关性筛除。先筛盈利能力，存活者再测 IC；两者通过后才逐个按正式因子库 |ρ| ≤ 0.75 准入。"
+                      extra="三代训练结果合并后，直接按训练 fitness 取前 N 进入测试；Webapp 不再提供独立的 HOF 容量或候选数，避免两个 N 产生歧义。"
                     >
                       <InputNumber min={1} max={500} />
                     </Form.Item>
@@ -497,9 +497,6 @@ export function GeneticMiningPanel({ open, onOpen, onClose }: { open: boolean; o
             ]}
           />
           <Card size="small" className="gp-run-mode">
-            <Form.Item name="admit" valuePropName="checked" style={{ marginBottom: 10 }}>
-              <Checkbox><CheckCircleOutlined /> 达标后自动加入正式因子库</Checkbox>
-            </Form.Item>
             <Form.Item name="continuous" valuePropName="checked" style={{ marginBottom: continuous ? 14 : 0 }}>
               <Checkbox>连续运行（每个 cycle 使用新随机种子）</Checkbox>
             </Form.Item>

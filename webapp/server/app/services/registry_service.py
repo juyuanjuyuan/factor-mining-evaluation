@@ -12,7 +12,10 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from engine import expression_data_symbols
-from factor_correlation import FactorCorrelationService
+from factor_correlation import (
+    FactorCorrelationService,
+    FactorCorrelationThresholdError,
+)
 from factor_registry import load_factor_batch, validate_factor_batch
 
 from ..config import Settings
@@ -406,6 +409,101 @@ class RegistryService:
                 self._submitted_names(),
                 tags=tags,
             )
+
+    def submit_gp_candidate(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        """Submit one GP-tested candidate through the formal-library service.
+
+        The GP runner only writes a durable handoff request after its test gates
+        pass.  This service owns test-library persistence, correlation checking,
+        and the resulting formal-library decision.
+        """
+
+        factor_name = str(request.get("factor_name") or "").strip()
+        expression = str(request.get("expression") or "").strip()
+        if not factor_name or not expression:
+            raise ValueError("GP 因子库提交请求缺少 factor_name 或 expression")
+
+        with self._write_lock:
+            formal = self.find(self.settings.submitted_batch_id, factor_name)
+            if formal:
+                if str(formal["expression"]) != expression:
+                    return {
+                        "status": "name_conflict",
+                        "factor_name": factor_name,
+                        "explanation": "正式因子库已有同名但不同表达式的因子",
+                    }
+                return {
+                    "status": "admitted",
+                    "factor_name": factor_name,
+                    "already_present": True,
+                    "correlation_checked": True,
+                    "correlation_passed": True,
+                    "formal_batch_id": self.settings.submitted_batch_id,
+                    "completed_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+                }
+
+            test_factor = self.find(self.settings.test_batch_id, factor_name)
+            if test_factor and str(test_factor["expression"]) != expression:
+                return {
+                    "status": "name_conflict",
+                    "factor_name": factor_name,
+                    "explanation": "测试库已有同名但不同表达式的因子",
+                }
+            if test_factor is None:
+                existing = next(
+                    (
+                        item
+                        for item in self.factors("all")
+                        if str(item["factor_name"]) == factor_name
+                    ),
+                    None,
+                )
+                if existing is not None:
+                    return {
+                        "status": "name_conflict",
+                        "factor_name": factor_name,
+                        "explanation": "其他注册批次已有同名因子",
+                    }
+                symbols = expression_data_symbols(expression)
+                test_factor = self.create(
+                    {
+                        "factor_name": factor_name,
+                        "expression": expression,
+                        "project": str(request.get("project") or "遗传规划"),
+                        "uses_proxy": "vwap" in symbols,
+                        "proxy_description": (
+                            "vwap is vwap_proxy_df.pq = (high + low) / 2"
+                            if "vwap" in symbols
+                            else ""
+                        ),
+                        "tags": ["genetic-programming", "test-passed"],
+                    }
+                )
+
+            try:
+                formal = self.submit(self.settings.test_batch_id, factor_name)
+            except FactorCorrelationThresholdError as exc:
+                return {
+                    "status": "rejected_correlation",
+                    "factor_name": factor_name,
+                    "correlation_checked": True,
+                    "correlation_passed": False,
+                    "correlation_threshold": exc.threshold,
+                    "violations": exc.violations,
+                    "explanation": str(exc),
+                    "completed_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+                }
+            if formal is None:
+                raise RuntimeError("GP 候选已写入测试库，但无法提交正式因子库")
+            return {
+                "status": "admitted",
+                "factor_name": factor_name,
+                "already_present": False,
+                "correlation_checked": True,
+                "correlation_passed": True,
+                "formal_batch_id": self.settings.submitted_batch_id,
+                "completed_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+            }
 
     def correlation_matrix(self) -> dict[str, Any]:
         """Read or rebuild the submitted-library correlation matrix."""

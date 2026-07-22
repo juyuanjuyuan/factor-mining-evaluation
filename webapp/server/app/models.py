@@ -178,7 +178,6 @@ class GeneticCampaignCreate(BaseModel):
     continuous: bool = False
     pause_seconds: float = Field(default=60.0, ge=0, le=86400)
     max_cycles: int | None = Field(default=None, ge=1, le=100000)
-    admit: bool = True
 
     @field_validator("campaign")
     @classmethod

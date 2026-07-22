@@ -153,7 +153,6 @@ export type GeneticCampaignInput = {
   continuous: boolean
   pause_seconds: number
   max_cycles?: number | null
-  admit: boolean
 }
 
 export type GeneticFitnessBackend = {
@@ -172,14 +171,18 @@ export type GeneticCandidate = {
   ic_checked?: boolean
   ic_passed?: boolean | null
   test_overall_passed: boolean
-  admitted: boolean
-  admission?: {
-    admitted: boolean
-    already_present: boolean
-    correlation_passed: boolean
-    correlation_threshold: number
-    explanation: string
-  } | null
+  factor_library_submission_requested?: boolean
+  factor_library_submission?: {
+    status: 'pending' | 'admitted' | 'rejected_correlation' | 'name_conflict' | 'failed'
+    factor_name?: string
+    already_present?: boolean
+    correlation_checked?: boolean
+    correlation_passed?: boolean
+    correlation_threshold?: number
+    explanation?: string
+    requested_at?: string
+    completed_at?: string
+  }
   error?: string
   standard_gates?: Record<string, { passed?: boolean }>
 }
@@ -188,7 +191,6 @@ export type GeneticCycleSummary = {
   cycle: number
   status: string
   test_passed_count: number
-  admitted_count: number
   failed_count: number
   candidates: GeneticCandidate[]
 }
@@ -209,8 +211,11 @@ export type GeneticCampaign = {
   current_generation_progress?: number | null
   completed_cycles: number
   test_passed_count: number
-  admitted_count: number
   failed_candidate_count: number
+  factor_library_pending_count: number
+  factor_library_admitted_count: number
+  factor_library_rejected_count: number
+  legacy_auto_admission?: boolean
   latest_cycle?: GeneticCycleSummary | null
   last_error?: Record<string, unknown> | null
   stdout_tail: string

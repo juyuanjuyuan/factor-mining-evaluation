@@ -12,11 +12,14 @@ import tempfile
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import TYPE_CHECKING, Any, Callable, Mapping
 
 from genetic_mining.tree import ExpressionTree
 
 from ..config import Settings
+
+if TYPE_CHECKING:
+    from ..services.registry_service import RegistryService
 
 
 ProcessFactory = Callable[..., subprocess.Popen[Any]]
@@ -117,10 +120,12 @@ class GeneticMiningSupervisor:
         *,
         process_factory: ProcessFactory = subprocess.Popen,
         poll_interval: float = 1.0,
+        registry: RegistryService | None = None,
     ):
         self.settings = settings
         self.process_factory = process_factory
         self.poll_interval = poll_interval
+        self.registry = registry
         self._lock = threading.RLock()
         self._processes: dict[str, subprocess.Popen[Any]] = {}
         self._thread: threading.Thread | None = None
@@ -188,10 +193,6 @@ class GeneticMiningSupervisor:
             str(self.settings.data_dir),
             "--output-dir",
             str(self.settings.genetic_mining_dir),
-            "--library-file",
-            str(self.settings.submitted_registry_path),
-            "--correlation-state-dir",
-            str(self.settings.state_dir),
             "--horizon",
             str(config["horizon"]),
             "--quantiles",
@@ -214,11 +215,7 @@ class GeneticMiningSupervisor:
             str(config.get("compute_backend", "cpu")),
             "--seed",
             str(config["seed"]),
-            "--project",
-            "遗传规划",
         ]
-        if not config.get("admit", True):
-            command.append("--no-admit")
         if config.get("continuous"):
             command.extend(["--forever", "--pause-seconds", str(config["pause_seconds"])])
             if config.get("max_cycles") is not None:
@@ -372,9 +369,82 @@ class GeneticMiningSupervisor:
         self._write_metadata(campaign, finished)
         return self._enrich(finished)
 
+    def _process_factor_library_submissions(self, root: Path) -> None:
+        """Let the factor-library service consume durable GP handoff requests."""
+
+        if self.registry is None:
+            return
+        for request_path in sorted(
+            root.glob(
+                "cycles/cycle_*/candidates/*/factor_library_submission_request.json"
+            )
+        ):
+            result_path = request_path.with_name("factor_library_submission.json")
+            if result_path.is_file():
+                continue
+            request = _read_json(request_path)
+            if request is None:
+                continue
+            try:
+                result = self.registry.submit_gp_candidate(request)
+            except Exception as exc:
+                result = {
+                    "status": "failed",
+                    "factor_name": request.get("factor_name"),
+                    "explanation": f"{type(exc).__name__}: {exc}",
+                    "completed_at": _now(),
+                }
+            _atomic_json(result_path, result)
+
+    @staticmethod
+    def _submission_result(
+        root: Path,
+        cycle: int,
+        factor_name: str,
+    ) -> dict[str, Any] | None:
+        candidate_dir = root / "cycles" / f"cycle_{cycle:06d}" / "candidates" / factor_name
+        result = _read_json(candidate_dir / "factor_library_submission.json")
+        if result is not None:
+            return result
+        request = _read_json(candidate_dir / "factor_library_submission_request.json")
+        if request is not None:
+            return {
+                "status": "pending",
+                "factor_name": request.get("factor_name"),
+                "requested_at": request.get("requested_at"),
+            }
+        return None
+
+    def _factor_library_submission_summary(
+        self,
+        root: Path,
+    ) -> tuple[dict[str, int], dict[tuple[int, str], dict[str, Any]]]:
+        counts = {"pending": 0, "admitted": 0, "rejected": 0}
+        results: dict[tuple[int, str], dict[str, Any]] = {}
+        for request_path in root.glob(
+            "cycles/cycle_*/candidates/*/factor_library_submission_request.json"
+        ):
+            try:
+                cycle = int(request_path.parents[2].name.removeprefix("cycle_"))
+            except ValueError:
+                continue
+            factor_name = request_path.parent.name
+            result = self._submission_result(root, cycle, factor_name)
+            if result is None:
+                continue
+            results[(cycle, factor_name)] = result
+            if result.get("status") == "admitted":
+                counts["admitted"] += 1
+            elif result.get("status") == "rejected_correlation":
+                counts["rejected"] += 1
+            elif result.get("status") == "pending":
+                counts["pending"] += 1
+        return counts, results
+
     def _enrich(self, metadata: Mapping[str, Any]) -> dict[str, Any]:
         campaign = str(metadata["campaign"])
         root = self._root(campaign)
+        self._process_factor_library_submissions(root)
         active = _read_json(root / "active_cycle.json")
         checkpoint = None
         if active and active.get("cycle") is not None:
@@ -390,6 +460,30 @@ class GeneticMiningSupervisor:
             if (payload := _read_json(path)) is not None
         ]
         latest = summaries[-1] if summaries else None
+        submission_counts, submission_results = self._factor_library_submission_summary(root)
+        if latest is not None:
+            latest = {
+                **latest,
+                "candidates": [
+                    {
+                        **candidate,
+                        **(
+                            {
+                                "factor_library_submission": submission_results[
+                                    (int(latest["cycle"]), str(candidate["factor_name"]))
+                                ]
+                            }
+                            if (
+                                int(latest["cycle"]),
+                                str(candidate["factor_name"]),
+                            )
+                            in submission_results
+                            else {}
+                        ),
+                    }
+                    for candidate in latest.get("candidates", [])
+                ],
+            }
         last_error = _read_json(root / "last_error.json")
         stage = active.get("status") if active else None
         next_generation = int(checkpoint.get("next_generation", 0)) if checkpoint else 0
@@ -410,8 +504,13 @@ class GeneticMiningSupervisor:
             **progress,
             "completed_cycles": len(summaries),
             "test_passed_count": sum(int(item.get("test_passed_count", 0)) for item in summaries),
-            "admitted_count": sum(int(item.get("admitted_count", 0)) for item in summaries),
             "failed_candidate_count": sum(int(item.get("failed_count", 0)) for item in summaries),
+            "factor_library_pending_count": submission_counts["pending"],
+            "factor_library_admitted_count": submission_counts["admitted"],
+            "factor_library_rejected_count": submission_counts["rejected"],
+            "legacy_auto_admission": bool(
+                (metadata.get("config") or {}).get("admit", False)
+            ),
             "latest_cycle": latest,
             "last_error": last_error,
             "stdout_tail": _tail(root / "web_stdout.log"),

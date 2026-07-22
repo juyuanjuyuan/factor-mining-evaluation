@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 
 from genetic_mining import EvolutionConfig, GeneticMiningRunner, MiningCampaignConfig
-from paths import DATA_DIR, OUTPUT_DIR, PROJECT_ROOT
+from paths import DATA_DIR, OUTPUT_DIR
 
 
 def _comma_ints(value: str) -> tuple[int, ...]:
@@ -30,16 +30,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--output-dir",
         type=Path,
         default=OUTPUT_DIR / "gp_factor_mining",
-    )
-    parser.add_argument(
-        "--library-file",
-        type=Path,
-        default=PROJECT_ROOT / "factor_registry" / "webapp_factor_library.json",
-    )
-    parser.add_argument(
-        "--correlation-state-dir",
-        type=Path,
-        default=OUTPUT_DIR / "webapp",
     )
     parser.add_argument("--horizon", type=int, default=1)
     parser.add_argument("--quantiles", type=int, default=10)
@@ -93,10 +83,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--minimum-annualized-return", type=float, default=0.30)
     parser.add_argument("--significance-level", type=float, default=0.05)
     parser.add_argument("--minimum-ic-mean", type=float, default=0.0)
-    parser.add_argument("--correlation-threshold", type=float, default=0.75)
     parser.add_argument("--seed", type=int, default=20190610)
-    parser.add_argument("--project", default="遗传规划")
-    parser.add_argument("--no-admit", action="store_true")
     parser.add_argument("--forever", action="store_true")
     parser.add_argument("--pause-seconds", type=float, default=60.0)
     parser.add_argument("--max-cycles", type=int)
@@ -139,8 +126,6 @@ def build_config(args: argparse.Namespace) -> MiningCampaignConfig:
         test_end=args.test_end,
         data_dir=args.data_dir,
         output_dir=args.output_dir,
-        library_file=args.library_file,
-        correlation_state_dir=args.correlation_state_dir,
         evolution=evolution,
         horizon=args.horizon,
         n_quantiles=args.quantiles,
@@ -150,10 +135,7 @@ def build_config(args: argparse.Namespace) -> MiningCampaignConfig:
         minimum_ic_mean=args.minimum_ic_mean,
         minimum_rolling_sharpe_60_median=args.minimum_sharpe_60_median,
         minimum_annualized_return=args.minimum_annualized_return,
-        correlation_threshold=args.correlation_threshold,
         seed=args.seed,
-        admit=not args.no_admit,
-        project=args.project,
     )
 
 
