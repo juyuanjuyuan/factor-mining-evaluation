@@ -5,6 +5,7 @@ import {
   Divider,
   Drawer,
   Form,
+  Input,
   InputNumber,
   Segmented,
   Space,
@@ -71,9 +72,28 @@ export function RunConfigDrawer({
   const methodCatalog = useQuery({ queryKey: ['methods'], queryFn: api.methods })
   const funnelStageCatalog = useQuery({ queryKey: ['funnel-stages'], queryFn: api.funnelStages })
   const templates = useQuery({ queryKey: ['templates'], queryFn: api.templates })
+  const timeline = useQuery({
+    queryKey: ['market-timeline'],
+    queryFn: api.marketTimeline,
+    enabled: open,
+  })
   const [form] = Form.useForm()
   const horizon = Form.useWatch('horizon', form) ?? 1
   const nQuantiles = Form.useWatch('n_quantiles', form) ?? 10
+  const signalStart = Form.useWatch('signal_start', form)
+  const signalEnd = Form.useWatch('signal_end', form)
+
+  const validateWindow = () => {
+    const start = form.getFieldValue('signal_start') as string | undefined
+    const end = form.getFieldValue('signal_end') as string | undefined
+    if (Boolean(start) !== Boolean(end)) {
+      return Promise.reject(new Error('请同时填写开始日和结束日'))
+    }
+    if (start && end && start > end) {
+      return Promise.reject(new Error('开始日不能晚于结束日'))
+    }
+    return Promise.resolve()
+  }
 
   // 打开时默认选中第一个内置模板（默认流水线）
   useEffect(() => {
@@ -147,6 +167,8 @@ export function RunConfigDrawer({
         horizon: values.horizon,
         n_quantiles: values.n_quantiles,
         significance_level: values.significance_level,
+        signal_start: values.signal_start || undefined,
+        signal_end: values.signal_end || undefined,
         gate:
           kind === 'evaluate' && gateConditions.length
             ? { conditions: gateConditions, match: gate.match }
@@ -274,6 +296,57 @@ export function RunConfigDrawer({
             </Form.Item>
           )}
         </Space>
+        <div className="evaluation-window-section">
+          <div className="evaluation-window-heading">
+            <div>
+              <Typography.Text strong>评价期间（信号日）</Typography.Text>
+              <Typography.Paragraph type="secondary">
+                留空表示使用全部历史。因子仍先用完整历史计算滚动值，再截取该期间；末尾会按持有期裁去无法在期间内平仓的信号日。
+              </Typography.Paragraph>
+            </div>
+            {(signalStart || signalEnd) && (
+              <Button
+                type="link"
+                onClick={() => form.setFieldsValue({ signal_start: undefined, signal_end: undefined })}
+              >
+                清空（全历史）
+              </Button>
+            )}
+          </div>
+          <div className="evaluation-window-fields">
+            <Form.Item
+              label="开始日"
+              name="signal_start"
+              dependencies={['signal_end']}
+              rules={[{ validator: validateWindow }]}
+            >
+              <Input
+                type="date"
+                min={timeline.data?.start_day}
+                max={timeline.data?.end_day}
+                placeholder={timeline.data?.start_day}
+              />
+            </Form.Item>
+            <span className="evaluation-window-separator">至</span>
+            <Form.Item
+              label="结束日"
+              name="signal_end"
+              dependencies={['signal_start']}
+              rules={[{ validator: validateWindow }]}
+            >
+              <Input
+                type="date"
+                min={timeline.data?.start_day}
+                max={timeline.data?.end_day}
+                placeholder={timeline.data?.end_day}
+              />
+            </Form.Item>
+          </div>
+          <Typography.Text type="secondary" className="evaluation-window-current">
+            本次选择：{signalStart && signalEnd ? `${signalStart} ~ ${signalEnd}` : '全部历史'}
+            {timeline.data ? ` · 数据覆盖 ${timeline.data.start_day} ~ ${timeline.data.end_day}` : ''}
+          </Typography.Text>
+        </div>
         {kind === 'funnel' ? (
           <>
             <Typography.Paragraph type="secondary">

@@ -48,6 +48,27 @@ r_H(t) = open[t + 1 + H] / open[t + 1] - 1
 Thus the default `H=1` label is exactly `open[t + 2] / open[t + 1] - 1`.
 Factor expressions may only use information available at or before day `t`.
 
+### Evaluation date window
+
+`evaluate_factor_expression` accepts optional `signal_start` and `signal_end` boundaries. The CLI
+exposes them as the paired `--signal-start YYYY-MM-DD --signal-end YYYY-MM-DD` flags. Both dates are
+inclusive requested sample boundaries and refer to factor signal dates, not entry or exit dates.
+
+The engine evaluates the expression against the full available history first, then slices the
+factor, close, and forward-return matrices. This preserves legitimate rolling lookback before
+`signal_start`. For a bounded window it excludes the final `horizon + 1` signal rows, ensuring that
+every entry at `open[t+1]` and exit at `open[t+1+horizon]` remain inside the requested period.
+
+Persisted metadata distinguishes the request from the usable sample:
+
+- `signal_start`, `signal_end`: requested inclusive boundaries;
+- `sample_start_day`, `sample_end_day`: first and last signal days actually evaluated after trading
+  calendar alignment and end-of-window label containment.
+
+Use non-overlapping training and testing periods for sample-split research. Candidate generation,
+selection, and tuning belong only to training. Freeze the expression and evaluation configuration
+before the testing run.
+
 ## Expression Namespace
 
 Supported data symbols: `c`, `o`, `h`, `l`, `vol`, `amt`, `vwap`, `cap`,
@@ -169,6 +190,8 @@ Core columns:
 | `evaluation_methods` | ordered comma-separated method names used by this run |
 | `evaluation_details` | JSON map of method detail names to relative CSV paths |
 | `evaluation_artifacts` | JSON map of method artifact names to relative paths |
+| `signal_start`, `signal_end` | requested bounded signal-date period; absent for a full-history run |
+| `sample_start_day`, `sample_end_day` | actual evaluated signal-date range after calendar alignment and label-safe tail trimming |
 | `ic_mean`, `ic_std`, `ir` | IC summary |
 | `ic_positive_ratio`, `ic_count` | IC breadth |
 | `pair_count` | total valid factor/return observations |

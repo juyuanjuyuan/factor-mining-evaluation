@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING, Any, Callable, Mapping, MutableMapping
+from typing import Any, Callable, Mapping, MutableMapping
 
 import numpy as np
 
 from .fitness import (
     FitnessContext,
     FitnessResult,
-    evaluate_processed_expression,
     evaluate_program_fitness,
 )
 from .tree import (
@@ -25,10 +24,6 @@ from .tree import (
     valid_tree,
 )
 
-if TYPE_CHECKING:
-    from .fitness_backends import FitnessBackend
-
-
 @dataclass(frozen=True)
 class EvolutionConfig:
     """Paper defaults plus explicit operational bounds for expression bloat."""
@@ -36,7 +31,7 @@ class EvolutionConfig:
     generations: int = 3
     population_size: int = 1000
     hall_of_fame: int = 100
-    n_components: int = 10
+    n_components: int = 100
     init_depth_min: int = 1
     init_depth_max: int = 4
     tournament_size: int = 20
@@ -48,7 +43,6 @@ class EvolutionConfig:
     p_point_replace: float = 0.40
     max_depth: int = 8
     max_nodes: int = 127
-    candidate_correlation_threshold: float = 0.90
     elite_size: int = 1
     n_jobs: int = 1
     compute_backend: str = "cpu"
@@ -99,8 +93,6 @@ class EvolutionConfig:
             raise ValueError("p_point_replace must be between zero and one")
         if self.parsimony_coefficient < 0:
             raise ValueError("parsimony_coefficient cannot be negative")
-        if not 0 < self.candidate_correlation_threshold < 1:
-            raise ValueError("candidate_correlation_threshold must be between zero and one")
         if not self.terminals or not self.windows or not self.exponents:
             raise ValueError("terminals, windows, and exponents cannot be empty")
         if self.compute_backend not in {"cpu", "mps"}:
@@ -388,61 +380,32 @@ def update_hall_of_fame(
     hall.update((item.fitness.expression, item) for item in ranked[:limit])
 
 
-def pooled_factor_correlation(left, right) -> float | None:
-    right = right.reindex(index=left.index, columns=left.columns)
-    left_values = left.to_numpy(dtype=float, copy=False).ravel()
-    right_values = right.to_numpy(dtype=float, copy=False).ravel()
-    valid = np.isfinite(left_values) & np.isfinite(right_values)
-    if int(valid.sum()) < 3:
-        return None
-    x = left_values[valid]
-    y = right_values[valid]
-    if np.isclose(np.std(x), 0.0) or np.isclose(np.std(y), 0.0):
-        return None
-    value = float(np.corrcoef(x, y)[0, 1])
-    return value if np.isfinite(value) else None
-
-
-def select_diverse_components(
+def select_top_components(
     hall: Mapping[str, ScoredTree],
-    context: FitnessContext,
     config: EvolutionConfig,
-    *,
-    backend: "FitnessBackend | None" = None,
 ) -> tuple[tuple[ScoredTree, ...], list[dict[str, Any]]]:
-    """Training-only greedy HOF filter analogous to gplearn components."""
+    """Freeze the highest-fitness HOF programs for independent test evaluation.
 
-    ranked = sorted(hall.values(), key=scored_sort_key)
-    selected: list[ScoredTree] = []
-    selected_exposures: list[Any] = []
-    audit: list[dict[str, Any]] = []
-    for item in ranked:
-        if item.fitness.selection_score == -np.inf:
-            continue
-        exposure = (
-            backend.evaluate_processed_tree(item.tree)
-            if backend is not None
-            else evaluate_processed_expression(item.fitness.expression, context)
-        )
-        correlations = [
-            pooled_factor_correlation(exposure, accepted)
-            for accepted in selected_exposures
-        ]
-        finite = [abs(value) for value in correlations if value is not None]
-        max_abs = max(finite, default=0.0)
-        accepted = max_abs <= config.candidate_correlation_threshold
-        audit.append(
-            {
-                "expression": item.fitness.expression,
-                "adjusted_fitness": item.fitness.adjusted_fitness,
-                "max_abs_correlation_to_selected": max_abs,
-                "threshold": config.candidate_correlation_threshold,
-                "accepted": accepted,
-            }
-        )
-        if accepted:
-            selected.append(item)
-            selected_exposures.append(exposure)
-            if len(selected) >= config.n_components:
-                break
-    return tuple(selected), audit
+    Diversity is enforced only by formal-library admission.  A training-only
+    pairwise HOF filter can discard a candidate merely because it resembles a
+    higher-ranked program which later fails the frozen test set or the existing
+    library's correlation gate.
+    """
+
+    ranked = [
+        item
+        for item in sorted(hall.values(), key=scored_sort_key)
+        if np.isfinite(item.fitness.selection_score)
+    ]
+    selected = tuple(ranked[: config.n_components])
+    audit = [
+        {
+            "rank": rank,
+            "expression": item.fitness.expression,
+            "adjusted_fitness": item.fitness.adjusted_fitness,
+            "selection_score": item.fitness.selection_score,
+            "selected_for_frozen_test": True,
+        }
+        for rank, item in enumerate(selected, start=1)
+    ]
+    return selected, audit

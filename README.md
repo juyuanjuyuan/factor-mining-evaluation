@@ -28,6 +28,23 @@ python scripts/run_factor_evaluation.py \
   --factor-name factor_test1 \
   --expression 'ts_mean(abs((h-l)/(h+l+1e-6)), 20)'
 
+# Agent 因子研究 CLI：先回看研究历史，再同步运行一个训练期候选
+/Users/huangjuyuan/miniforge3/envs/rdagent/bin/python \
+  scripts/run_factor_research.py catalog all
+/Users/huangjuyuan/miniforge3/envs/rdagent/bin/python \
+  scripts/run_factor_research.py journal summary \
+  --research-id short-term-reversal-v1
+/Users/huangjuyuan/miniforge3/envs/rdagent/bin/python \
+  scripts/run_factor_research.py run \
+  --factor-name factor_test1 \
+  --expression 'ts_mean(abs((h-l)/(h+l+1e-6)), 20)' \
+  --methods rank_ic,rank_icir,quantile_returns,quantile_cumulative,quantile_plot \
+  --signal-start 2019-10-10 --signal-end 2021-12-31 \
+  --research-id short-term-reversal-v1 --research-phase training \
+  --research-direction '短期价格反转' \
+  --hypothesis '近期收益冲击会在下一持有期部分反转' \
+  --iteration-note '训练期首个候选'
+
 # Alpha101 预检和断点续跑
 python scripts/run_alpha101_evaluations.py --select all --dry-run
 python scripts/run_alpha101_evaluations.py --select all
@@ -62,6 +79,7 @@ python scripts/run_gp_factor_mining.py \
 # 核心回归
 python tests/test_evaluation_methods.py
 python tests/test_factor_evaluation.py
+python tests/test_factor_research_cli.py
 python tests/test_market_data_contract.py
 
 # Web 平台（安装、开发双端口、构建后单端口）
@@ -95,3 +113,5 @@ npm run dev
 也提供“遗传算法添加因子”入口，可配置、启动、停止并查看同一套 campaign 的实时进度。
 新因子批次的保存规范见 [因子注册表规范](docs/FACTOR_REGISTRY.md)。
 可视化平台的启动与验证见 [Web 平台说明](webapp/README.md)。
+LLM 驱动的候选生成、Webapp 控件到 CLI 的对应关系与研究闭环见
+[`mine-stock-factors` skill](skills/mine-stock-factors/SKILL.md)。

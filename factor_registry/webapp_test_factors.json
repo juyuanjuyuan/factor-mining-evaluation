@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "batch_id": "webapp_test_factors",
+  "batch_name": "Web 平台测试因子",
+  "batch_version": 5,
+  "generated_at": "2026-07-22T20:34:03+08:00",
+  "source": {
+    "type": "webapp",
+    "name": "Factor evaluation web platform",
+    "notes": "User-maintained test factor definitions"
+  },
+  "formula_language": "engine expression",
+  "factor_count": 4,
+  "factors": [
+    {
+      "number": 1,
+      "factor_name": "gp_001",
+      "entered_at": "2026-07-22T09:26:54+08:00",
+      "updated_at": "2026-07-22T09:26:54+08:00",
+      "implementation_set": "webapp_test",
+      "project": "自定义因子",
+      "expression": "((((log(abs((vol)) + 1e-6)) / where(abs((vol)) > 1e-6, (vol), 1.0))) / where(abs((c)) > 1e-6, (c), 1.0))",
+      "paper_expression": "",
+      "required_symbols": [
+        "c",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": ""
+    },
+    {
+      "number": 2,
+      "factor_name": "gp_002",
+      "entered_at": "2026-07-22T09:27:36+08:00",
+      "updated_at": "2026-07-22T09:27:36+08:00",
+      "implementation_set": "webapp_test",
+      "project": "自定义因子",
+      "expression": "ts_product((((((0.411430180093) * (vol))) - (h))), 20)",
+      "paper_expression": "",
+      "required_symbols": [
+        "h",
+        "vol"
+      ],
+      "uses_proxy": false,
+      "proxy_description": ""
+    },
+    {
+      "number": 3,
+      "factor_name": "iv_quad_low_turnover_036",
+      "entered_at": "2026-07-22T16:48:20+08:00",
+      "updated_at": "2026-07-22T16:48:20+08:00",
+      "implementation_set": "webapp_test",
+      "project": "ai_factor_mining R003 低风险异象 idiosyncratic-volatility-v1",
+      "expression": "rank_cs(rank_cs(-ts_std(log1p(amt), 40)) + rank_cs(-ts_std(o / (delay(c, 1) + 1e-6) - 1, 40)) + rank_cs(-ts_std(pct(c, 1), 60)) + rank_cs(-ts_mean(amt, 60) / (cap + 1e-6)))",
+      "paper_expression": "四来源等权稳定性复合(成交额对数波动40 + 隔夜跳空波动40 + 收益波动60 + 换手率水平60，各自横截面排名后等权相加再排名)。项目 ai_factor_mining，轮次 Round 003，研究方向「特质波动、彩票偏好与低风险异象」，research-id idiosyncratic-volatility-v1。训练期选择理由：训练期请求 2013-01-14..2021-12-13(实际样本止于2021-12-09，n60=32) 分组单调 True、60日夏普中位1.6080 / G10有限值均值1.6481(两项相对1.0门槛的余量均显著大于此前失败候选)、日均单边换手0.0532、252日最差回撤-0.2868、顶组年化0.2487、G10累计4.4994；四个来源机制正交，代表「最大化夏普余量与风险特征」而非「最大化收益」的取舍方向。测试通过标签：TEST-PASSED。测试期请求 2021-12-14..2026-07-10(实际样本2021-12-14..2026-07-08，n60=18)，模板「盈利能力测试」horizon=1 quantiles=10：top_group_above_every_lower_group=true；gn_rolling_sharpe_60_median=1.111218>=1；mean(finite rolling_sharpe_60.G10)=1.0240225466084529>=1，A分支成立；top_group_annualized_return=0.163402。代理数据说明：不使用 vwap 代理列，输入 amt/o/c/cap 均为真实数据。",
+      "required_symbols": [
+        "amt",
+        "c",
+        "cap",
+        "o"
+      ],
+      "uses_proxy": false,
+      "proxy_description": ""
+    },
+    {
+      "number": 4,
+      "factor_name": "iv_quad_maxret_048",
+      "entered_at": "2026-07-22T20:34:03+08:00",
+      "updated_at": "2026-07-22T20:34:03+08:00",
+      "implementation_set": "webapp_test",
+      "project": "ai_factor_mining R004 低风险异象 idiosyncratic-volatility-v1",
+      "expression": "rank_cs(rank_cs(-ts_std(log1p(amt), 40)) + rank_cs(-ts_std(o / (delay(c, 1) + 1e-6) - 1, 40)) + rank_cs(-ts_max(pct(c, 1), 60)) + rank_cs(-ts_mean(amt, 60) / (cap + 1e-6)))",
+      "paper_expression": "四来源等权稳定性复合(成交额对数波动40 + 隔夜跳空波动40 + MAX效应/60日最大单日涨幅 + 换手率水平60，各自横截面排名后等权相加再排名)。项目 ai_factor_mining，轮次 Round 004，研究方向「特质波动、彩票偏好与低风险异象」，research-id idiosyncratic-volatility-v1。相对 Round 003 已入库的 iv_quad_low_turnover_036，本因子把收益二阶矩替换为 MAX 效应(彩票属性极值)。训练期选择理由：训练期请求 2013-01-14..2021-12-13(实际样本止于2021-12-09，n60=32) 分组单调 True；60日夏普中位1.7128 与 G10有限值均值1.7120 几乎相等且余量都很大(该方向12/12候选均同时>=1)；顶组年化0.2659、G10累计5.1067、日均单边换手0.0560、252日最差回撤-0.2808(全轮最好)；代表「中位与均值最佳平衡 + 成分替换」的取舍。测试通过标签：TEST-PASSED。测试期请求 2021-12-14..2026-07-10(实际样本2021-12-14..2026-07-08，n60=18)，模板「盈利能力测试」horizon=1 quantiles=10：top_group_above_every_lower_group=true；gn_rolling_sharpe_60_median=1.170404>=1；mean(finite rolling_sharpe_60.G10)=1.0406988231555398>=1，A分支成立；top_group_annualized_return=0.170720；换手0.0522；252日最差回撤-0.2978。代理数据说明：不使用 vwap 代理列，输入 amt/o/c/cap 均为真实数据。",
+      "required_symbols": [
+        "amt",
+        "c",
+        "cap",
+        "o"
+      ],
+      "uses_proxy": false,
+      "proxy_description": ""
+    }
+  ]
+}

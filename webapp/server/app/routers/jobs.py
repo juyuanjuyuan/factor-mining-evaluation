@@ -8,9 +8,6 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from engine import parse_and_validate_expression
-from evaluators import evaluation_method_names, resolve_evaluation_methods
-from evaluators.base import REGISTERED_EVALUATION_METHODS, method_metadata
-
 from ..config import settings
 from ..db import Database
 from ..models import JobCreate
@@ -20,6 +17,7 @@ from ..services.funnel_service import (
     normalize_funnel_stages,
 )
 from ..services.registry_service import RegistryService
+from ..services.pipeline_service import validate_ordered_pipeline
 from ..worker.supervisor import WorkerSupervisor
 from .dependencies import get_db, get_registry, get_supervisor
 
@@ -36,24 +34,10 @@ def _validated_pipeline(names: list[str] | None) -> list[str]:
     working.
     """
 
-    if not names:
-        return list(evaluation_method_names(resolve_evaluation_methods(None)))
-    unknown = [name for name in names if name not in REGISTERED_EVALUATION_METHODS]
-    if unknown:
-        raise HTTPException(422, f"未知评价方法: {', '.join(unknown)}")
-    executed: set[str] = set()
-    problems: list[str] = []
-    for position, name in enumerate(names, start=1):
-        metadata = method_metadata(REGISTERED_EVALUATION_METHODS[name])
-        missing = [req for req in metadata.requires if req not in executed]
-        if missing:
-            problems.append(f"第 {position} 步 {name} 需要先执行 {', '.join(missing)}")
-        executed.update(metadata.provides)
-    if not problems:
-        return list(names)
-    if len(set(names)) == len(names):
-        return list(evaluation_method_names(resolve_evaluation_methods(names)))
-    raise HTTPException(422, "；".join(problems))
+    try:
+        return validate_ordered_pipeline(names)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 @router.post("", status_code=201)
@@ -153,7 +137,13 @@ def create_job(
         "template_id": request.template_id,
         "funnel_stages": funnel_stages,
         "gate": gate,
+        "signal_start": request.signal_start,
+        "signal_end": request.signal_end,
     }
+    run_params = {
+        "signal_start": request.signal_start,
+        "signal_end": request.signal_end,
+    } if request.signal_start is not None else {}
     if request.tags:
         params["tag_selection"] = {
             "tags": request.tags,
@@ -169,6 +159,7 @@ def create_job(
                 n_quantiles=request.n_quantiles,
                 runs_dir=settings.runs_dir,
                 stages=funnel_stages,
+                run_params=run_params,
             )
             for factor in resolved_factors
         ]
@@ -182,6 +173,7 @@ def create_job(
                 horizon=request.horizon,
                 n_quantiles=request.n_quantiles,
                 runs_dir=settings.runs_dir,
+                run_params=run_params,
             )
             for factor in resolved_factors
         ]

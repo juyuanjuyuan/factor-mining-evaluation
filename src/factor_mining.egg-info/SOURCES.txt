@@ -9,6 +9,7 @@ src/returns.py
 src/cli/__init__.py
 src/cli/factor.py
 src/cli/genetic.py
+src/cli/research.py
 src/cli/standard.py
 src/evaluation_standards/__init__.py
 src/evaluation_standards/base.py
@@ -54,5 +55,6 @@ tests/test_evaluation_standards.py
 tests/test_extended_evaluators.py
 tests/test_factor_evaluation.py
 tests/test_factor_registry.py
+tests/test_factor_research_cli.py
 tests/test_genetic_mining.py
 tests/test_market_data_contract.py

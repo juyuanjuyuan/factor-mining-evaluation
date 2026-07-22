@@ -1,6 +1,6 @@
-import { BranchesOutlined, CheckCircleOutlined, PlusOutlined, RocketOutlined, SwapOutlined, TagsOutlined } from '@ant-design/icons'
+import { BranchesOutlined, CheckCircleOutlined, DeleteOutlined, PlusOutlined, RocketOutlined, SwapOutlined, TagsOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Card, Collapse, Empty, Flex, Input, Modal, Segmented, Select, Skeleton, Space, Statistic, Table, Tag, Tooltip, Typography, message } from 'antd'
+import { Alert, Button, Card, Collapse, Empty, Flex, Input, Modal, Popconfirm, Segmented, Select, Skeleton, Space, Statistic, Table, Tag, Tooltip, Typography, message } from 'antd'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api, Factor } from '../api/client'
@@ -143,6 +143,18 @@ export default function FactorLibrary({ mode }: FactorLibraryProps) {
       queryClient.invalidateQueries({ queryKey: ['test-factors'] })
       queryClient.invalidateQueries({ queryKey: ['factors'] })
       navigate(`/factors/${factor.batch_id}/${factor.factor_name}`)
+    },
+    onError: (error) => message.error(error.message),
+  })
+  const removeFromLibrary = useMutation({
+    mutationFn: (factor: Factor) => api.removeFromFactorLibrary(factor.batch_id, factor.factor_name),
+    onSuccess: () => {
+      message.success('已移出因子库；源测试因子和历史评价均已保留')
+      setCorrelationPair(null)
+      queryClient.invalidateQueries({ queryKey: ['factors'] })
+      queryClient.invalidateQueries({ queryKey: ['test-factors'] })
+      queryClient.invalidateQueries({ queryKey: ['factor-correlation'] })
+      queryClient.invalidateQueries({ queryKey: ['factor-tags', 'factor'] })
     },
     onError: (error) => message.error(error.message),
   })
@@ -617,7 +629,7 @@ export default function FactorLibrary({ mode }: FactorLibraryProps) {
             },
             {
               title: '',
-              width: isTestLibrary ? 168 : 126,
+              width: isTestLibrary ? 168 : 170,
               fixed: 'right',
               render: (_, factor) => (
                 <Space size={6}>
@@ -638,6 +650,26 @@ export default function FactorLibrary({ mode }: FactorLibraryProps) {
                         onClick={() => submit.mutate(factor)}
                       />
                     </Tooltip>
+                  )}
+                  {!isTestLibrary && (
+                    <Popconfirm
+                      title="移出因子库？"
+                      description="仅移除正式库副本；源测试因子、标签和历史评价会保留。"
+                      okText="确认移出"
+                      cancelText="取消"
+                      okButtonProps={{ danger: true }}
+                      onConfirm={() => removeFromLibrary.mutate(factor)}
+                    >
+                      <Tooltip title="移出因子库">
+                        <Button
+                          danger
+                          size="small"
+                          icon={<DeleteOutlined />}
+                          loading={removeFromLibrary.isPending}
+                          aria-label={`将 ${factor.factor_name} 移出因子库`}
+                        />
+                      </Tooltip>
+                    </Popconfirm>
                   )}
                   <Button type="primary" ghost size="small" onClick={() => setDrawerFactors([factor])}>
                     回测

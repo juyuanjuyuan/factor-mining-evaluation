@@ -25,7 +25,7 @@ Batch runs that plot need `MPLCONFIGDIR=/private/tmp/matplotlib` prefixed. Scrip
 python scripts/run_factor_evaluation.py \
   --factor-name factor_test1 \
   --expression 'ts_mean(abs((h-l)/(h+l+1e-6)), 20)'
-# Optional: --horizon N --quantiles N --methods rank_icir,quantile_plot --output-dir ... --close-file ...
+# Optional: --horizon N --quantiles N --methods rank_icir,quantile_plot --signal-start YYYY-MM-DD --signal-end YYYY-MM-DD --output-dir ... --close-file ...
 
 # Alpha101 batch: dry-run precheck, then run (resumable; skips already-successful matching runs)
 python scripts/run_alpha101_evaluations.py --select all --dry-run
@@ -145,5 +145,9 @@ Project-local skills provide the required workflow for specialized tasks. Read t
   modules, state transforms, dependencies, outputs, pipeline registration, frontend labels, or
   webapp contracts. For evaluator code changes, the skill routes to its
   `references/evaluator-extension.md`.
+- **`mine-stock-factors`** — `skills/mine-stock-factors/SKILL.md`; use when an agent designs,
+  generates, validates, tests, compares, or archives LLM-created factor candidates. It routes
+  deterministic work through the Webapp-parity research CLI and applies only the evaluation and
+  stopping rules supplied by the human researcher's prompt.
 
 ## Imported Claude Cowork project instructions

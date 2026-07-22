@@ -141,7 +141,7 @@ export type GeneticCampaignInput = {
   test_end: string
   horizon: number
   n_quantiles: number
-  preprocess_mode: 'paper_local' | 'market_cap' | 'none'
+  preprocess_mode: 'paper_local' | 'market_cap_industry' | 'market_cap' | 'none'
   population_size: number
   generations: number
   hall_of_fame: number
@@ -168,8 +168,18 @@ export type GeneticCandidate = {
   factor_name: string
   expression: string
   status: string
+  profitability_passed?: boolean
+  ic_checked?: boolean
+  ic_passed?: boolean | null
   test_overall_passed: boolean
   admitted: boolean
+  admission?: {
+    admitted: boolean
+    already_present: boolean
+    correlation_passed: boolean
+    correlation_threshold: number
+    explanation: string
+  } | null
   error?: string
   standard_gates?: Record<string, { passed?: boolean }>
 }
@@ -363,7 +373,9 @@ export const api = {
       method: 'POST',
     }),
   deleteFactor: (batchId: string, name: string) =>
-    request<void>(`/factors/${batchId}/${name}`, { method: 'DELETE' }),
+    request<void>(`/factors/${encodeURIComponent(batchId)}/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  removeFromFactorLibrary: (batchId: string, name: string) =>
+    request<void>(`/factors/${encodeURIComponent(batchId)}/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   validateExpression: (expression: string) =>
     request<{ valid: boolean; symbols: string[]; operators: string[] }>('/expressions/validate', {
       method: 'POST',

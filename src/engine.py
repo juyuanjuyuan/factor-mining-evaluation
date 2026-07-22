@@ -14,6 +14,7 @@ from uuid import uuid4
 
 import numpy as np
 import pandas as pd
+from numpy.lib.stride_tricks import sliding_window_view
 
 from evaluators import (
     DEFAULT_EVALUATION_METHODS,
@@ -102,6 +103,90 @@ def roll(x: pd.DataFrame, window: int) -> Any:
     return x.rolling(window=window, min_periods=max(1, window // 2))
 
 
+# Rolling reductions that pandas can only express through a per-window Python
+# callback (`rolling().apply`) cost minutes on a full market matrix. The helpers
+# below evaluate the same windows as one strided NumPy block per column chunk,
+# preserving every pandas semantic the callback form has: windows run oldest to
+# newest, the first `window - 1` rows see a shorter window, and a row whose
+# window holds fewer than `max(1, window // 2)` observations stays NaN.
+
+# Peak block size per column chunk; NumPy kernels allocate a few temporaries of
+# the same shape on top of it.
+_ROLLING_BLOCK_BYTES = 64 * 1024 * 1024
+
+
+def _window_column_chunk(row_count: int, window: int) -> int:
+    """Columns per sliding-window block, bounded by a fixed memory budget."""
+
+    per_column_bytes = max(1, row_count * window * 8)
+    return int(min(4096, max(1, _ROLLING_BLOCK_BYTES // per_column_bytes)))
+
+
+def _leading_pad_counts(row_count: int, window: int) -> np.ndarray:
+    """Padded slots in each row's trailing window, newest row first at index 0."""
+
+    return np.clip(window - 1 - np.arange(row_count), 0, None).astype(float)
+
+
+def _rolling_blocks(
+    values: np.ndarray,
+    window: int,
+    *,
+    pad_value: float,
+) -> Any:
+    """Yield ``(start, block)`` where block is ``(rows, columns, window)``."""
+
+    row_count, column_count = values.shape
+    step = _window_column_chunk(row_count, window)
+    for start in range(0, column_count, step):
+        chunk = values[:, start : start + step]
+        padded = np.full(
+            (row_count + window - 1, chunk.shape[1]),
+            pad_value,
+            dtype=float,
+        )
+        padded[window - 1 :] = chunk
+        yield start, sliding_window_view(padded, window, axis=0)
+
+
+def _rolling_window_reduce(
+    x: pd.DataFrame,
+    window: int,
+    kernel: Any,
+    *,
+    pad_value: float = np.nan,
+) -> pd.DataFrame:
+    """Apply a vectorized window kernel with pandas ``roll`` semantics.
+
+    ``kernel(block, pad_counts)`` receives one ``(rows, columns, window)``
+    block and the per-row count of padded slots, and returns ``(rows,
+    columns)``. Kernels never apply ``min_periods`` themselves; that mask is
+    enforced here from the observation count so every operator agrees.
+
+    ``pandas.rolling`` demotes an infinity to a missing observation before it
+    reduces a window, so the block is sanitized the same way and every kernel
+    can treat NaN as the single missing marker.
+    """
+
+    window = _window_int(window, "window")
+    raw = x.to_numpy(dtype=float, copy=False)
+    values = np.where(np.isfinite(raw), raw, np.nan)
+    result = np.empty(values.shape, dtype=float)
+    if not values.size:
+        return pd.DataFrame(result, index=x.index, columns=x.columns)
+    min_periods = max(1, window // 2)
+    pad_counts = _leading_pad_counts(values.shape[0], window)
+    for start, block in _rolling_blocks(values, window, pad_value=pad_value):
+        observed = np.count_nonzero(~np.isnan(block), axis=2).astype(float)
+        if not np.isnan(pad_value):
+            # A non-NaN pad is a placeholder, not an observation.
+            observed -= pad_counts[:, None]
+        reduced = kernel(block, pad_counts)
+        reduced[observed < min_periods] = np.nan
+        result[:, start : start + block.shape[1]] = reduced
+    return pd.DataFrame(result, index=x.index, columns=x.columns)
+
+
 def ts_mean(x: pd.DataFrame, window: int) -> pd.DataFrame:
     return roll(x, window).mean()
 
@@ -126,8 +211,14 @@ def ts_median(x: pd.DataFrame, window: int) -> pd.DataFrame:
     return roll(x, window).median()
 
 
+def _product_block(block: np.ndarray, pad_counts: np.ndarray) -> np.ndarray:
+    # ``np.prod`` propagates NaN, so a window with any missing observation
+    # stays missing. Padded slots carry the multiplicative identity.
+    return block.prod(axis=2)
+
+
 def ts_product(x: pd.DataFrame, window: int) -> pd.DataFrame:
-    return roll(x, window).apply(np.prod, raw=True)
+    return _rolling_window_reduce(x, window, _product_block, pad_value=1.0)
 
 
 def ts_count(condition: pd.DataFrame, window: int) -> pd.DataFrame:
@@ -169,24 +260,42 @@ def ts_rank(x: pd.DataFrame, window: int) -> pd.DataFrame:
     return roll(x, window).rank(method="average", pct=True)
 
 
-def _arg_extreme(values: np.ndarray, *, find_maximum: bool) -> float:
-    if len(values) == 0 or not np.isfinite(values).any():
-        return np.nan
-    position = np.nanargmax(values) if find_maximum else np.nanargmin(values)
-    # Alpha101 uses one-based positions within the oldest-to-newest window.
-    return float(position + 1)
+def _extreme_position_block(
+    block: np.ndarray,
+    pad_counts: np.ndarray,
+    *,
+    find_maximum: bool,
+) -> np.ndarray:
+    """One-based position of the window extreme, ignoring missing values.
+
+    Ties resolve to the oldest occurrence, matching ``nanargmax``.
+    """
+
+    missing = np.isnan(block)
+    filled = np.where(missing, -np.inf if find_maximum else np.inf, block)
+    position = (
+        filled.argmax(axis=2) if find_maximum else filled.argmin(axis=2)
+    ).astype(float)
+    # Alpha101 uses one-based positions within the oldest-to-newest window,
+    # counted from the first real observation rather than the padding.
+    position += 1.0 - pad_counts[:, None]
+    return np.where(np.isfinite(block).any(axis=2), position, np.nan)
+
+
+def _argmax_block(block: np.ndarray, pad_counts: np.ndarray) -> np.ndarray:
+    return _extreme_position_block(block, pad_counts, find_maximum=True)
+
+
+def _argmin_block(block: np.ndarray, pad_counts: np.ndarray) -> np.ndarray:
+    return _extreme_position_block(block, pad_counts, find_maximum=False)
 
 
 def ts_argmax(x: pd.DataFrame, window: int) -> pd.DataFrame:
-    return roll(x, window).apply(
-        lambda values: _arg_extreme(values, find_maximum=True), raw=True
-    )
+    return _rolling_window_reduce(x, window, _argmax_block)
 
 
 def ts_argmin(x: pd.DataFrame, window: int) -> pd.DataFrame:
-    return roll(x, window).apply(
-        lambda values: _arg_extreme(values, find_maximum=False), raw=True
-    )
+    return _rolling_window_reduce(x, window, _argmin_block)
 
 
 def delay(x: pd.DataFrame, periods: int = 1) -> pd.DataFrame:
@@ -235,18 +344,22 @@ def signed_power(x: pd.DataFrame, exponent: Any) -> pd.DataFrame:
     return np.sign(x) * np.power(np.abs(x), exponent)
 
 
+def _decay_linear_block(block: np.ndarray, pad_counts: np.ndarray) -> np.ndarray:
+    valid = np.isfinite(block)
+    # While history ramps up pandas passes a shorter window, so the newest row
+    # weighs the number of real slots rather than the nominal window length.
+    weights = np.arange(1, block.shape[2] + 1, dtype=float) - pad_counts[:, None]
+    weighted = np.where(valid, weights[:, None, :], 0.0)
+    numerator = (np.where(valid, block, 0.0) * weighted).sum(axis=2)
+    denominator = weighted.sum(axis=2)
+    usable = denominator > 0
+    return np.where(usable, numerator / np.where(usable, denominator, 1.0), np.nan)
+
+
 def decay_linear(x: pd.DataFrame, window: int) -> pd.DataFrame:
     """Linearly weighted mean with the largest weight on the newest row."""
 
-    def weighted(values: np.ndarray) -> float:
-        valid = np.isfinite(values)
-        if not valid.any():
-            return np.nan
-        weights = np.arange(1, len(values) + 1, dtype=float)
-        weights = weights[valid]
-        return float(np.dot(values[valid], weights) / weights.sum())
-
-    return roll(x, window).apply(weighted, raw=True)
+    return _rolling_window_reduce(x, window, _decay_linear_block)
 
 
 def ts_sma(
@@ -269,22 +382,38 @@ def ts_sma(
     return x.ewm(alpha=weight / window, adjust=False).mean()
 
 
+def _linear_reg_slope_block(
+    block: np.ndarray,
+    pad_counts: np.ndarray,
+) -> np.ndarray:
+    valid = np.isfinite(block)
+    count = valid.sum(axis=2)
+    usable = count >= 2
+    divisor = np.where(usable, count, 1.0)
+    # Both axes are centred inside the window, so the ramp-up padding offset
+    # cancels and the nominal time sequence can be used unshifted.
+    time = np.where(
+        valid,
+        np.arange(1, block.shape[2] + 1, dtype=float),
+        0.0,
+    )
+    observed = np.where(valid, block, 0.0)
+    centered_time = np.where(
+        valid, time - (time.sum(axis=2) / divisor)[:, :, None], 0.0
+    )
+    centered_observed = np.where(
+        valid, observed - (observed.sum(axis=2) / divisor)[:, :, None], 0.0
+    )
+    denominator = np.square(centered_time).sum(axis=2)
+    numerator = (centered_time * centered_observed).sum(axis=2)
+    usable &= denominator > 0
+    return np.where(usable, numerator / np.where(usable, denominator, 1.0), np.nan)
+
+
 def ts_linear_reg_slope(x: pd.DataFrame, window: int) -> pd.DataFrame:
     """Trailing least-squares slope against the time sequence ``1..window``."""
 
-    def slope(values: np.ndarray) -> float:
-        valid = np.isfinite(values)
-        if valid.sum() < 2:
-            return np.nan
-        time = np.arange(1, len(values) + 1, dtype=float)[valid]
-        observed = values[valid]
-        centered_time = time - time.mean()
-        denominator = np.dot(centered_time, centered_time)
-        if denominator == 0:
-            return np.nan
-        return float(np.dot(centered_time, observed - observed.mean()) / denominator)
-
-    return roll(x, window).apply(slope, raw=True)
+    return _rolling_window_reduce(x, window, _linear_reg_slope_block)
 
 
 def ts_cum_sum(x: pd.DataFrame) -> pd.DataFrame:
@@ -399,7 +528,7 @@ def restrict_evaluation_window(
     signal_end: str | pd.Timestamp | None,
     horizon: int,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, str]]:
-    """Return a leakage-safe signal-date subset for a model train/test split.
+    """Return a leakage-safe signal-date subset for one evaluation period.
 
     A signal formed after close on ``t`` enters at ``open[t+1]`` and exits at
     ``open[t+1+horizon]``.  When a bounded sample is requested, the last
@@ -436,14 +565,19 @@ def restrict_evaluation_window(
             f"it needs at least {horizon + 2} trading days"
         )
     selected_index = close.index[first_position : final_position + 1]
+    metadata = {
+        "sample_start_day": pd.Timestamp(selected_index[0]).date().isoformat(),
+        "sample_end_day": pd.Timestamp(selected_index[-1]).date().isoformat(),
+    }
+    if start is not None:
+        metadata["signal_start"] = start.date().isoformat()
+    if end is not None:
+        metadata["signal_end"] = end.date().isoformat()
     return (
         factor.reindex(index=selected_index),
         close.reindex(index=selected_index),
         forward_return.reindex(index=selected_index),
-        {
-            "sample_start_day": pd.Timestamp(selected_index[0]).date().isoformat(),
-            "sample_end_day": pd.Timestamp(selected_index[-1]).date().isoformat(),
-        },
+        metadata,
     )
 
 

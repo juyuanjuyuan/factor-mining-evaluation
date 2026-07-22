@@ -124,6 +124,7 @@ def first_funnel_run(
     n_quantiles: int,
     runs_dir: Path,
     stages: list[dict[str, Any]] | None = None,
+    run_params: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     configured = normalize_funnel_stages(stages)
     stage = configured[0]
@@ -135,6 +136,7 @@ def first_funnel_run(
         horizon=horizon,
         n_quantiles=n_quantiles,
         runs_dir=runs_dir,
+        run_params=run_params,
     )
 
 

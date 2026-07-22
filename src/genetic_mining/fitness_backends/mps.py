@@ -11,7 +11,12 @@ import pandas as pd
 
 from evaluators.tradability import open_limit_entry_masks
 
-from ..fitness import FitnessContext, FitnessResult
+from ..fitness import (
+    FitnessContext,
+    FitnessResult,
+    MARKET_CAP_INDUSTRY_MODE,
+    MIN_INDUSTRY_OBSERVATIONS,
+)
 from ..tree import ExpressionTree
 
 
@@ -94,7 +99,7 @@ class MPSFitnessBackend:
         self.data = {
             symbol: self._frame_tensor(frame, reference=close)
             for symbol, frame in context.market_data.items()
-            if symbol != "st"
+            if symbol not in {"st", "industry"}
         }
         if "st" in context.market_data:
             st = (
@@ -115,8 +120,8 @@ class MPSFitnessBackend:
             dtype=self.dtype,
             device=self.device,
         )
-        self.style_exposures = tuple(
-            self.torch.as_tensor(
+        self.style_exposure_tensors = {
+            name: self.torch.as_tensor(
                 frame.reindex(
                     index=context.signal_index,
                     columns=self.columns,
@@ -124,8 +129,10 @@ class MPSFitnessBackend:
                 dtype=self.dtype,
                 device=self.device,
             )
-            for frame in context.style_exposures.values()
-        )
+            for name, frame in context.style_exposures.items()
+        }
+        self.style_exposures = tuple(self.style_exposure_tensors.values())
+        self.industry_codes, self.industry_count = self._build_industry_codes()
         self.untradeable = self._build_untradeable_mask()
 
     def _frame_tensor(self, frame: pd.DataFrame, *, reference: pd.DataFrame):
@@ -164,6 +171,29 @@ class MPSFitnessBackend:
         mask[valid] = limit_values[positions[valid]] | st_values[positions[valid]]
         return self.torch.as_tensor(mask, dtype=self.torch.bool, device=self.device)
 
+    def _build_industry_codes(self):
+        if self.context.preprocess_mode != MARKET_CAP_INDUSTRY_MODE:
+            return None, 0
+        if "industry" not in self.context.market_data:
+            raise KeyError("market_cap_industry MPS 预处理缺少 industry")
+        industry = self.context.market_data["industry"].reindex(
+            index=self.context.signal_index,
+            columns=self.columns,
+        )
+        values = industry.to_numpy(dtype=object, copy=False)
+        codes, labels = pd.factorize(values.reshape(-1), sort=True)
+        if not len(labels):
+            raise ValueError("market_cap_industry 训练区间没有有效行业分类")
+        encoded = codes.reshape(values.shape)
+        return (
+            self.torch.as_tensor(
+                encoded,
+                dtype=self.torch.int64,
+                device=self.device,
+            ),
+            int(len(labels)),
+        )
+
     @property
     def metadata(self) -> dict[str, Any]:
         status = mps_runtime_status()
@@ -173,6 +203,9 @@ class MPSFitnessBackend:
             "dtype": self.dtype_name,
             "torch_version": status.get("torch_version"),
             "implicit_cpu_fallback": False,
+            "industry_fixed_effects": (
+                self.context.preprocess_mode == MARKET_CAP_INDUSTRY_MODE
+            ),
         }
 
     def close(self) -> None:
@@ -540,6 +573,101 @@ class MPSFitnessBackend:
         enough = count >= float(len(exposures) + 3)
         return self.torch.where(valid & enough[:, None], residual, self.torch.nan)
 
+    def _residualize_industry_market_cap(self, factor):
+        """Joint daily industry fixed effects plus log-cap regression on MPS.
+
+        By Frisch-Waugh-Lovell, the residual from an intercept, G-1 industry
+        dummies and log market cap equals: demean factor and log cap inside
+        each eligible industry, regress the two demeaned series, then take the
+        residual.  This avoids materializing a date x stock x industry dummy
+        tensor while preserving the evaluator's joint-OLS definition.
+        """
+
+        if self.industry_codes is None or self.industry_count < 1:
+            raise RuntimeError("market_cap_industry MPS 行业编码未初始化")
+        log_cap = self.style_exposure_tensors.get("log_total_market_cap")
+        if log_cap is None:
+            raise RuntimeError("market_cap_industry MPS 缺少 log(total_market_cap)")
+
+        codes = self.industry_codes
+        safe_codes = codes.clamp_min(0)
+        valid = (
+            self.torch.isfinite(factor)
+            & self.torch.isfinite(log_cap)
+            & (codes >= 0)
+        )
+        group_shape = (factor.shape[0], self.industry_count)
+        group_counts = self.torch.zeros(
+            group_shape,
+            dtype=self.dtype,
+            device=self.device,
+        ).scatter_add(1, safe_codes, valid.to(self.dtype))
+        eligible_groups = group_counts >= float(MIN_INDUSTRY_OBSERVATIONS)
+        used = valid & self.torch.gather(eligible_groups, 1, safe_codes)
+        used_float = used.to(self.dtype)
+
+        factor_sums = self.torch.zeros(
+            group_shape,
+            dtype=self.dtype,
+            device=self.device,
+        ).scatter_add(
+            1,
+            safe_codes,
+            self.torch.where(used, factor, self.torch.zeros_like(factor)),
+        )
+        cap_sums = self.torch.zeros(
+            group_shape,
+            dtype=self.dtype,
+            device=self.device,
+        ).scatter_add(
+            1,
+            safe_codes,
+            self.torch.where(used, log_cap, self.torch.zeros_like(log_cap)),
+        )
+        denominator = group_counts.clamp_min(1.0)
+        factor_group_mean = self.torch.gather(
+            factor_sums / denominator,
+            1,
+            safe_codes,
+        )
+        cap_group_mean = self.torch.gather(
+            cap_sums / denominator,
+            1,
+            safe_codes,
+        )
+        centered_factor = self.torch.where(
+            used,
+            factor - factor_group_mean,
+            self.torch.zeros_like(factor),
+        )
+        centered_cap = self.torch.where(
+            used,
+            log_cap - cap_group_mean,
+            self.torch.zeros_like(log_cap),
+        )
+        cap_sum_squares = centered_cap.square().sum(dim=1)
+        cross_product = (centered_cap * centered_factor).sum(dim=1)
+        cap_informative = cap_sum_squares > self.torch.finfo(self.dtype).eps
+        beta = self.torch.where(
+            cap_informative,
+            cross_product / cap_sum_squares.clamp_min(
+                self.torch.finfo(self.dtype).eps
+            ),
+            self.torch.zeros_like(cross_product),
+        )
+        residual = centered_factor - beta[:, None] * centered_cap
+
+        observation_count = used_float.sum(dim=1)
+        model_rank = eligible_groups.sum(dim=1).to(self.dtype) + cap_informative.to(
+            self.dtype
+        )
+        enough_degrees_of_freedom = observation_count > model_rank
+        return self.torch.where(
+            used & enough_degrees_of_freedom[:, None],
+            residual,
+            self.torch.nan,
+        )
+
     def _terminal(self, value: str):
         if value in self.data:
             return self.data[value]
@@ -657,7 +785,10 @@ class MPSFitnessBackend:
             self.torch.minimum(factor, (median + 5.0 * mad)[:, None]),
             (median - 5.0 * mad)[:, None],
         )
-        factor = self._residualize(factor, self.style_exposures)
+        if self.context.preprocess_mode == MARKET_CAP_INDUSTRY_MODE:
+            factor = self._residualize_industry_market_cap(factor)
+        else:
+            factor = self._residualize(factor, self.style_exposures)
         return self._zscore(factor)
 
     def _daily_rank_ic(self, factor):

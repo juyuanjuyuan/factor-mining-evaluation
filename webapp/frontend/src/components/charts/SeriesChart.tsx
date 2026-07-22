@@ -30,6 +30,7 @@ const semanticColors: Record<string, string> = {
   '卡尔曼 10日 IC Mean': '#1565C0',
   '二阶低通 10日 IC Mean': '#E65100',
   '傅里叶 10日 IC Mean': '#00838F',
+  '共同日期样本平均 Rank IC': '#C62828',
 }
 const axisColor = '#756d61'
 const gridColor = '#dfd2bb'
@@ -116,6 +117,7 @@ export function DetailChart({
 }) {
   const baseName = detailBaseName(detail.name)
   const isIc = baseName === 'ic'
+  const isIcHorizonDecay = baseName === 'ic_horizon_decay'
   const isCumulativeReturns = baseName === 'cumulative_returns'
   const isIcPeakDecay = baseName === 'ic_peak_decay'
   const isIcTrendFilter = baseName === 'ic_trend_filter'
@@ -132,6 +134,8 @@ export function DetailChart({
   const series: any[] = detail.columns.map((column, columnIndex) => {
     const label = isIcPeakDecay && column === 'mean_ic'
       ? '60日滚动 Mean IC（50日重叠）'
+      : isIcHorizonDecay && column === 'mean_rank_ic'
+        ? '共同日期样本平均 Rank IC'
       : isIcTrendFilter && column === 'daily_ic'
         ? '日度 IC'
         : isIcTrendFilter && column === 'filtered_ic'
@@ -152,7 +156,7 @@ export function DetailChart({
     return {
       name: label,
       type: isLag ? 'bar' : 'line',
-      showSymbol: isIc || isIcTrendFilter || isIcTrendMean ? false : undefined,
+      showSymbol: isIc || isIcHorizonDecay || isIcTrendFilter || isIcTrendMean ? false : undefined,
       connectNulls: false,
       smooth: false,
       itemStyle: { color },
@@ -194,7 +198,9 @@ export function DetailChart({
       }),
     })
   }
-  const cycleMarkAreas = !isLag ? marketCycleMarkAreas(detail.index, cycleBackgrounds) : []
+  const cycleMarkAreas = !isLag && !isIcHorizonDecay
+    ? marketCycleMarkAreas(detail.index, cycleBackgrounds)
+    : []
   if (cycleMarkAreas.length && series.length) {
     series[0].markArea = {
       silent: true,
@@ -227,7 +233,19 @@ export function DetailChart({
       option={{
         backgroundColor: 'transparent',
         color: palette,
-        tooltip: rollingWindowDays
+        tooltip: isIcHorizonDecay
+          ? {
+              trigger: 'axis',
+              formatter: (params: any[]) => {
+                const horizon = String(params[0]?.axisValueLabel ?? '')
+                const values = params.map((item) => {
+                  const value = typeof item.data === 'number' ? item.data.toFixed(6) : '暂无'
+                  return `${item.marker}${item.seriesName}: ${value}`
+                }).join('<br/>')
+                return [`<strong>持有期 H：${horizon} 个交易日</strong>`, values].join('<br/>')
+              },
+            }
+          : rollingWindowDays
           ? {
               trigger: 'axis',
               formatter: (params: any[]) => {
@@ -248,7 +266,14 @@ export function DetailChart({
           : { trigger: 'axis' },
         legend: { type: 'scroll', top: 4, textStyle: { color: '#665f55' } },
         grid: { left: 55, right: 24, top: 48, bottom: 70 },
-        xAxis: { type: 'category', data: detail.index, axisLabel: { color: axisColor } },
+        xAxis: {
+          type: 'category',
+          data: detail.index,
+          name: isIcHorizonDecay ? '持有期 H（交易日）' : undefined,
+          nameLocation: 'middle',
+          nameGap: isIcHorizonDecay ? 48 : undefined,
+          axisLabel: { color: axisColor },
+        },
         yAxis: isIc
           ? [
               { type: 'value', scale: true, axisLabel: { color: axisColor }, splitLine: { lineStyle: { color: gridColor } } },

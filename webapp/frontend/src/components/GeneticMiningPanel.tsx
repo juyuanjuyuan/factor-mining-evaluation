@@ -26,6 +26,7 @@ import {
   Statistic,
   Steps,
   Tag,
+  Tooltip,
   Typography,
   message,
 } from 'antd'
@@ -52,6 +53,13 @@ const statusColor: Record<string, string> = {
   failed: 'red',
 }
 
+const preprocessLabel: Record<GeneticCampaignInput['preprocess_mode'], string> = {
+  paper_local: '论文本地适配（四风格）',
+  market_cap_industry: '市值 + 行业联合中性化',
+  market_cap: '仅市值中性（旧任务）',
+  none: '不预处理',
+}
+
 function campaignName() {
   const now = new Date()
   const part = (value: number) => String(value).padStart(2, '0')
@@ -76,9 +84,9 @@ function defaultDates(days: string[]) {
 }
 
 function campaignStep(campaign: GeneticCampaign) {
-  if (campaign.status === 'succeeded') return 3
+  if (campaign.status === 'succeeded') return 4
   if (campaign.current_stage === 'testing') return 1
-  if (campaign.admitted_count > 0 || campaign.latest_cycle) return 2
+  if (campaign.admitted_count > 0 || campaign.latest_cycle) return 3
   return 0
 }
 
@@ -90,8 +98,10 @@ function CandidateRows({ campaign }: { campaign: GeneticCampaign }) {
   return (
     <div className="gp-candidate-list">
       {candidates.map((candidate) => {
-        const icPassed = Boolean(candidate.standard_gates?.ic_test?.passed)
         const profitPassed = Boolean(candidate.standard_gates?.profitability_test?.passed)
+        const icChecked = candidate.ic_checked === true || candidate.standard_gates?.ic_test !== undefined
+        const icPassed = Boolean(candidate.standard_gates?.ic_test?.passed)
+        const correlationRejected = candidate.admission?.correlation_passed === false
         return (
           <div className="gp-candidate-row" key={candidate.factor_name}>
             <div>
@@ -101,11 +111,21 @@ function CandidateRows({ campaign }: { campaign: GeneticCampaign }) {
               </Typography.Text>
             </div>
             <Space wrap size={[4, 4]}>
-              <Tag color={icPassed ? 'green' : 'red'}>IC {icPassed ? '通过' : '未通过'}</Tag>
               <Tag color={profitPassed ? 'green' : 'red'}>盈利 {profitPassed ? '通过' : '未通过'}</Tag>
-              <Tag color={candidate.admitted ? 'green' : 'default'}>
-                {candidate.admitted ? '已入库' : '未入库'}
+              <Tag color={!icChecked ? 'default' : icPassed ? 'green' : 'red'}>
+                IC {!icChecked ? '未检' : icPassed ? '通过' : '未通过'}
               </Tag>
+              <Tooltip title={candidate.admission?.explanation}>
+                <Tag color={candidate.admitted ? 'green' : correlationRejected ? 'orange' : 'default'}>
+                  {candidate.admitted
+                    ? '已入库'
+                    : correlationRejected
+                      ? '相关性未通过'
+                      : campaign.config.admit && candidate.test_overall_passed
+                        ? '未入库'
+                        : '未提交'}
+                </Tag>
+              </Tooltip>
             </Space>
           </div>
         )
@@ -178,7 +198,8 @@ function CampaignCard({ campaign }: { campaign: GeneticCampaign }) {
         status={campaign.status === 'failed' ? 'error' : campaign.status === 'stopped' ? 'wait' : 'process'}
         items={[
           { title: '训练集进化', description: currentGeneration || '等待种群计算' },
-          { title: '测试集双标准', description: campaign.current_stage === 'testing' ? '正在评价冻结表达式' : 'IC + 盈利能力' },
+          { title: '测试集盈利标准', description: campaign.current_stage === 'testing' ? '先筛冻结表达式' : '市值+行业中性化后的净分组收益' },
+          { title: '测试集 IC', description: '仅对盈利存活者检测' },
           { title: '相关性准入', description: '|ρ| ≤ 0.75' },
           { title: '完成本轮', description: `${campaign.completed_cycles} 个 cycle` },
         ]}
@@ -217,9 +238,9 @@ function CampaignCard({ campaign }: { campaign: GeneticCampaign }) {
               <>
                 <Descriptions size="small" column={{ xs: 1, sm: 2, md: 3 }}>
                   <Descriptions.Item label="种群/代数">{campaign.config.population_size} / {campaign.config.generations}</Descriptions.Item>
-                  <Descriptions.Item label="Hall of Fame">{campaign.config.hall_of_fame}</Descriptions.Item>
-                  <Descriptions.Item label="测试候选">{campaign.config.components}</Descriptions.Item>
-                  <Descriptions.Item label="预处理">{campaign.config.preprocess_mode}</Descriptions.Item>
+                  <Descriptions.Item label="Hall of Fame（训练 fitness）">{campaign.config.hall_of_fame}</Descriptions.Item>
+                  <Descriptions.Item label="冻结测试候选（按 fitness 排序）">{campaign.config.components}</Descriptions.Item>
+                  <Descriptions.Item label="预处理">{preprocessLabel[campaign.config.preprocess_mode] || campaign.config.preprocess_mode}</Descriptions.Item>
                   <Descriptions.Item label="训练后端">{campaign.config.compute_backend === 'mps' ? 'MPS / Apple GPU' : 'CPU'}</Descriptions.Item>
                   <Descriptions.Item label="CPU 线程">{campaign.config.n_jobs}</Descriptions.Item>
                   <Descriptions.Item label="创建时间">{shortTime(campaign.created_at)}</Descriptions.Item>
@@ -275,7 +296,7 @@ export function GeneticMiningPanel({ open, onOpen, onClose }: { open: boolean; o
       population_size: 1000,
       generations: 3,
       hall_of_fame: 100,
-      components: 10,
+      components: 100,
       tournament_size: 20,
       compute_backend: mpsAvailable ? 'mps' : 'cpu',
       n_jobs: mpsAvailable ? 1 : 2,
@@ -362,7 +383,7 @@ export function GeneticMiningPanel({ open, onOpen, onClose }: { open: boolean; o
           type="info"
           showIcon
           message="冻结训练/测试边界"
-          description="训练集只用于表达式进化和候选去重。冻结后的表达式才进入测试集；只有 IC 检测通过，且最高组全面占优，并满足 60 日夏普中位数 ≥ 1 或年化收益 > 30%，再通过 |ρ| ≤ 0.75 才会写入正式因子库。"
+          description="训练集只用于表达式进化和候选去重。冻结后的表达式先用市值+行业中性化后的净分组收益筛选；仅盈利存活者再做测试集 IC 检测。两关均通过后，才进行 |ρ| ≤ 0.75 的正式因子库准入。"
         />
         {active && (
           <Alert
@@ -415,7 +436,7 @@ export function GeneticMiningPanel({ open, onOpen, onClose }: { open: boolean; o
             <Form.Item label="训练预处理" name="preprocess_mode" rules={[{ required: true }]}>
               <Select options={[
                 { value: 'paper_local', label: '论文本地适配（推荐）' },
-                { value: 'market_cap', label: '仅市值中性' },
+                { value: 'market_cap_industry', label: '市值 + 行业联合中性化' },
                 { value: 'none', label: '不预处理' },
               ]} />
             </Form.Item>
@@ -423,7 +444,7 @@ export function GeneticMiningPanel({ open, onOpen, onClose }: { open: boolean; o
               label="训练计算后端"
               name="compute_backend"
               rules={[{ required: true }]}
-              extra={backends.data?.find((backend) => backend.name === 'mps')?.reason || '测试集双标准始终使用 CPU 评价。'}
+              extra={backends.data?.find((backend) => backend.name === 'mps')?.reason || '测试集盈利与 IC 标准均始终使用 CPU 评价。'}
             >
               <Select options={(backends.data || [
                 { name: 'cpu', available: true, device_name: 'NumPy/Pandas CPU' },
@@ -453,10 +474,15 @@ export function GeneticMiningPanel({ open, onOpen, onClose }: { open: boolean; o
                     <Form.Item label="进化代数" name="generations" rules={[{ required: true }]}>
                       <InputNumber min={1} max={100} />
                     </Form.Item>
-                    <Form.Item label="Hall of Fame" name="hall_of_fame" rules={[{ required: true }]}>
+                    <Form.Item label="Hall of Fame（跨各代训练 fitness 前 N）" name="hall_of_fame" rules={[{ required: true }]}>
                       <InputNumber min={1} max={5000} />
                     </Form.Item>
-                    <Form.Item label="进入测试的候选数" name="components" rules={[{ required: true }]}>
+                    <Form.Item
+                      label="进入冻结测试的候选数"
+                      name="components"
+                      rules={[{ required: true }]}
+                      extra="按训练 fitness 排序直接取前 N；HOF 内不做相关性筛除。先筛盈利能力，存活者再测 IC；两者通过后才逐个按正式因子库 |ρ| ≤ 0.75 准入。"
+                    >
                       <InputNumber min={1} max={500} />
                     </Form.Item>
                     <Form.Item label="锦标赛规模" name="tournament_size" rules={[{ required: true }]}>

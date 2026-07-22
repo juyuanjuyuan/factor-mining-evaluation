@@ -4,12 +4,14 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 
 import _bootstrap  # noqa: F401
 from genetic_mining.evolution import EvolutionConfig, evaluate_population
 from genetic_mining.fitness import (
     evaluate_processed_expression,
     evaluate_program_fitness,
+    fitness_contract,
     prepare_fitness_context,
 )
 from genetic_mining.fitness_backends import MPSFitnessBackend, mps_runtime_status
@@ -124,8 +126,10 @@ def test_preprocessing_and_fitness_match_cpu() -> None:
     data = synthetic_market_data(155)
     data["st"].iloc[50:55, :2] = True
     data["o"].iloc[70, 2] = data["c"].iloc[69, 2] * 1.10
+    data["cap"].iloc[60, 0] = 0.0
+    data["industry"].iloc[60, 16:22] = pd.NA
     tree = function("ts_std", terminal("c"), parameter=20)
-    for mode in ("market_cap", "paper_local"):
+    for mode in ("market_cap", "market_cap_industry", "paper_local"):
         context = prepare_fitness_context(
             data,
             train_start="2020-01-02",
@@ -155,6 +159,13 @@ def test_preprocessing_and_fitness_match_cpu() -> None:
         assert np.isclose(mps_fitness.ic_mean, cpu_fitness.ic_mean, atol=2e-6)
         assert np.isclose(mps_fitness.ic_std, cpu_fitness.ic_std, atol=2e-6)
         assert np.isclose(mps_fitness.adjusted_fitness, cpu_fitness.adjusted_fitness, atol=2e-6)
+        if mode == "market_cap_industry":
+            contract = fitness_contract(context)
+            assert contract["neutralization_model"] == (
+                "factor ~ intercept + log(total_market_cap) + "
+                "industry_l1_fixed_effects"
+            )
+            assert contract["minimum_industry_observations"] == 3
 
 
 def test_mps_fitness_cannot_see_test_returns() -> None:
@@ -164,7 +175,7 @@ def test_mps_fitness_cannot_see_test_returns() -> None:
     kwargs = {
         "train_start": "2020-01-02",
         "train_end": "2020-05-29",
-        "preprocess_mode": "market_cap",
+        "preprocess_mode": "market_cap_industry",
         "minimum_ic_days": 20,
     }
     tree = function("delay", terminal("c"), parameter=2)

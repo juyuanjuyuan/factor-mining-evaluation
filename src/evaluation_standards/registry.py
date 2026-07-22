@@ -18,7 +18,7 @@ PROFITABILITY_STANDARD_NAME = "profitability_test"
 
 IC_METHOD_NAMES = (
     "prefix_truncation_consistency",
-    "market_cap_neutralize",
+    "industry_market_cap_neutralize",
     "rank_ic",
     "rank_icir",
     "newey_west_ic_significance",
@@ -27,7 +27,7 @@ IC_METHOD_NAMES = (
 )
 
 PROFITABILITY_METHOD_NAMES = (
-    "market_cap_neutralize",
+    "industry_market_cap_neutralize",
     "tradability_filter",
     "quantile_net_returns",
     "quantile_cumulative",
@@ -52,7 +52,7 @@ REGISTERED_EVALUATION_STANDARDS: dict[str, EvaluationStandard] = {
         label="IC检测",
         methods=_methods(IC_METHOD_NAMES),
         description=(
-            "测试集上的因果一致性、市值中性 Rank IC/IR、Newey-West 显著性、"
+            "测试集上的因果一致性、市值+行业联合中性 Rank IC/IR、Newey-West 显著性、"
             "IC 趋势与 60 日滚动 Mean IC。"
         ),
     ),
@@ -61,7 +61,7 @@ REGISTERED_EVALUATION_STANDARDS: dict[str, EvaluationStandard] = {
         label="盈利能力测试",
         methods=_methods(PROFITABILITY_METHOD_NAMES),
         description=(
-            "测试集上的市值中性化、入场可交易性过滤、净分组收益、分段风险与"
+            "测试集上的市值+行业联合中性化、入场可交易性过滤、净分组收益、分段风险与"
             "最高组表现。"
         ),
     ),
@@ -123,7 +123,7 @@ def evaluate_ic_gate(
             passed=prefix_passed,
         ),
         GateCondition(
-            name="市值中性 Rank IC 均值为正",
+            name="市值+行业联合中性 Rank IC 均值为正",
             metric="ic_mean",
             operator=">",
             expected=float(minimum_ic_mean),

@@ -37,6 +37,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--quantiles", type=int, default=10)
     parser.add_argument(
+        "--signal-start",
+        help="inclusive signal-date window start (YYYY-MM-DD); requires --signal-end",
+    )
+    parser.add_argument(
+        "--signal-end",
+        help="inclusive signal-date window end (YYYY-MM-DD); requires --signal-start",
+    )
+    parser.add_argument(
         "--methods",
         default="default",
         help=(
@@ -66,7 +74,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    args = build_parser().parse_args()
+    parser = build_parser()
+    args = parser.parse_args()
+    if (args.signal_start is None) != (args.signal_end is None):
+        parser.error("--signal-start and --signal-end must be provided together")
     result = evaluate_factor_expression(
         factor_name=args.factor_name,
         expression=args.expression,
@@ -74,6 +85,8 @@ def main() -> None:
         output_dir=args.output_dir,
         horizon=args.horizon,
         n_quantiles=args.quantiles,
+        signal_start=args.signal_start,
+        signal_end=args.signal_end,
         evaluation_methods=resolve_evaluation_methods(args.methods),
         file_names={
             "c": args.close_file,

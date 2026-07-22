@@ -39,6 +39,22 @@ ICIR &= \frac{\overline{IC}}{s_{IC}}
       '对最近一次 rank_ic 生成的有效日度 IC 使用样本标准差（ddof=1），同时输出 IC 为正占比和 |ICIR|。',
     interpretation: 'ICIR 衡量预测方向的一致性；必须结合带符号 IC 均值判断，不能只看绝对值。',
   },
+  ic_horizon_decay: {
+    label: 'IC 持有期衰减',
+    category: '预测能力',
+    description: '固定同一组信号日期，比较 H=20 至 252 日未来收益对应的平均 Rank IC。',
+    formula: String.raw`\begin{aligned}
+\mathcal H &= \{20,21,\ldots,252\} \\
+R_{i,t}^{(H)} &= \frac{\operatorname{open}_{i,t+1+H}}{\operatorname{open}_{i,t+1}}-1 \\
+IC_t^{(H)} &= \operatorname{Corr}\!\left(\operatorname{rank}_i(f_{i,t}),\operatorname{rank}_i(R_{i,t}^{(H)})\right) \\
+\mathcal T &= \bigcap_{H\in\mathcal H}\left\{t:IC_t^{(H)}\text{ 有限}\right\} \\
+\overline{IC}^{(H)} &= \frac{1}{|\mathcal T|}\sum_{t\in\mathcal T}IC_t^{(H)}
+\end{aligned}`,
+    definition:
+      '直接读取当前工作因子和复权开盘价，不依赖单一期限的 rank_ic。因子在 t 日收盘后形成，并于 t+1 日开盘进入；H 日标签为 open[t+1+H]/open[t+1]−1。先按最大 H=252 限制可用信号日期，再计算 H=20...252 的逐日横截面 Spearman IC；只有在所有 233 个期限上都能形成有限 IC 的日期才进入共同样本 T，因此曲线每一点使用完全相同的日期集合。每个横截面至少需要 3 对有限样本，页面同时报告结构可用日期数、最终共同日期数和被共同样本规则剔除的日期数。',
+    interpretation:
+      '横轴是未来收益持有期 H，纵轴是共同日期样本上的平均 Rank IC；它衡量预测能力随持有期变化，而不是 IC 在历史日期上的趋势。不同 H 的累计未来收益高度重叠，曲线点并不独立；本模块只输出衰减曲线，不计算或定义半衰期。',
+  },
   ic_peak_decay: {
     label: '60 日滚动 Mean IC（50 日重叠）',
     category: '预测能力',

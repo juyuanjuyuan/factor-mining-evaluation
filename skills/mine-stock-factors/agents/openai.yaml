@@ -1,0 +1,4 @@
+interface:
+  display_name: "挖掘股票因子"
+  short_description: "用本项目 CLI 挖掘、回测并持续记录股票因子研究"
+  default_prompt: "Use $mine-stock-factors to review the existing research journal, generate and screen stock-factor candidates on my training period, record each iteration, freeze winners, and test them out of sample under the evaluation protocol I provide."

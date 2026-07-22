@@ -50,6 +50,7 @@ function detailDisplayKind(name: string): DetailDisplayKind | null {
   if (base === 'group_returns') return 'summary'
   if (
     base === 'ic' ||
+    base === 'ic_horizon_decay' ||
     base === 'ic_peak_decay' ||
     base === 'ic_trend_filter' ||
     base === 'ic_trend_filter_mean_10' ||
@@ -440,10 +441,17 @@ export default function RunDetail() {
               </Tag>
             </Tooltip>
           </Descriptions.Item>
-          <Descriptions.Item label="样本区间" span={3}>
-            {result.start_day && result.end_day
-              ? `${String(result.start_day)} ~ ${String(result.end_day)}`
-              : '暂无'}
+          <Descriptions.Item label="请求的评价期间" span={3}>
+            {data.run_params?.signal_start && data.run_params?.signal_end
+              ? `${String(data.run_params.signal_start)} ~ ${String(data.run_params.signal_end)}`
+              : '全部历史'}
+          </Descriptions.Item>
+          <Descriptions.Item label="实际信号样本" span={3}>
+            {result.sample_start_day && result.sample_end_day
+              ? `${String(result.sample_start_day)} ~ ${String(result.sample_end_day)}`
+              : result.start_day && result.end_day
+                ? `${String(result.start_day)} ~ ${String(result.end_day)}`
+                : '暂无'}
           </Descriptions.Item>
           <Descriptions.Item label="评价方法" span={3}>
             {data.methods.map((method) => (

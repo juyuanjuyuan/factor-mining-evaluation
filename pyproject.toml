@@ -17,6 +17,7 @@ dependencies = [
 [project.optional-dependencies]
 webapp = [
   "fastapi>=0.115",
+  "httpx>=0.27",
   "uvicorn[standard]>=0.30",
 ]
 mps = [
@@ -25,6 +26,7 @@ mps = [
 
 [project.scripts]
 evaluate-factor = "cli.factor:main"
+factor-research = "cli.research:main"
 evaluate-factor-standard = "cli.standard:main"
 mine-factors-gp = "cli.genetic:main"
 evaluate-alpha101 = "batch:main"

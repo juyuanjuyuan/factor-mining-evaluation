@@ -40,7 +40,10 @@ Prefix plotting batch runs with `MPLCONFIGDIR=/private/tmp/matplotlib`.
 ```
 
 6. Use `--methods`, `--horizon`, `--quantiles`, file overrides, and `--output-dir` only when the
-   requested evaluation differs from project defaults.
+   requested evaluation differs from project defaults. For a bounded evaluation, provide both
+   `--signal-start YYYY-MM-DD` and `--signal-end YYYY-MM-DD`. These are requested signal-date
+   boundaries; the engine computes rolling expressions on full prior history and trims the final
+   `horizon + 1` signal rows so every forward-open label remains inside the period.
 7. Treat missing or empty metrics, details, code snapshots, or required plots as a failed run.
 
 Report at least the expression, factor name, signed IC mean, IC standard deviation, signed and

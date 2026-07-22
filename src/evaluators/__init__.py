@@ -15,6 +15,12 @@ from .future_perturbation import (
     future_data_perturbation_test,
     perturb_data_after,
 )
+from .ic_horizon_decay import (
+    IC_HORIZON_DECAY_MAX_HORIZON,
+    IC_HORIZON_DECAY_MIN_HORIZON,
+    evaluate_ic_horizon_decay,
+    ic_horizon_decay,
+)
 from .ic_peak_decay import evaluate_ic_peak_decay, ic_peak_decay
 from .ic_trend_filter import (
     compare_ic_trend_filters,
@@ -91,6 +97,7 @@ __all__ = [
     "evaluate_quantile_net_returns",
     "evaluate_quantile_returns",
     "evaluate_future_data_perturbation",
+    "evaluate_ic_horizon_decay",
     "evaluate_ic_peak_decay",
     "evaluate_ic_trend_filter",
     "evaluate_industry_market_cap_neutralization",
@@ -110,6 +117,9 @@ __all__ = [
     "future_data_perturbation_test",
     "fourier_low_pass_ic",
     "get_ic_info",
+    "IC_HORIZON_DECAY_MAX_HORIZON",
+    "IC_HORIZON_DECAY_MIN_HORIZON",
+    "ic_horizon_decay",
     "ic_peak_decay",
     "kalman_ic_trend",
     "plot_group_cumulative",

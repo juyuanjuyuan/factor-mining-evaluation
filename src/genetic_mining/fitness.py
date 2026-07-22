@@ -11,6 +11,7 @@ import pandas as pd
 from engine import evaluate_expression, pct, restrict_evaluation_window, ts_mean, ts_std
 from evaluators.tradability import mask_untradeable_entries
 from returns import RETURN_DEFINITION, calculate_forward_open_return
+from transforms import neutralize_factor_by_industry_and_market_cap
 
 from .tree import ExpressionTree
 
@@ -20,6 +21,11 @@ PAPER_LOCAL_STYLE_NAMES = (
     "close_return_20",
     "log_average_traded_amount_20",
     "close_return_volatility_20",
+)
+MARKET_CAP_INDUSTRY_MODE = "market_cap_industry"
+MIN_INDUSTRY_OBSERVATIONS = 3
+SUPPORTED_PREPROCESS_MODES = frozenset(
+    {"paper_local", "market_cap", MARKET_CAP_INDUSTRY_MODE, "none"}
 )
 
 
@@ -81,15 +87,18 @@ def prepare_fitness_context(
 ) -> FitnessContext:
     """Precompute fixed training labels/styles without reading the test window."""
 
-    if preprocess_mode not in {"paper_local", "market_cap", "none"}:
+    if preprocess_mode not in SUPPORTED_PREPROCESS_MODES:
         raise ValueError(
-            "preprocess_mode must be one of paper_local, market_cap, or none"
+            "preprocess_mode must be one of paper_local, market_cap, "
+            "market_cap_industry, or none"
         )
     if minimum_ic_days < 2:
         raise ValueError("minimum_ic_days must be at least two")
     required = {"c", "o"}
-    if preprocess_mode in {"paper_local", "market_cap"}:
+    if preprocess_mode in {"paper_local", "market_cap", MARKET_CAP_INDUSTRY_MODE}:
         required.add("cap")
+    if preprocess_mode == MARKET_CAP_INDUSTRY_MODE:
+        required.add("industry")
     if preprocess_mode == "paper_local":
         required.update({"amt", "limit", "st"})
     missing = required - set(market_data)
@@ -108,7 +117,7 @@ def prepare_fitness_context(
     )
     signal_index = bounded_return.index
     styles: dict[str, pd.DataFrame] = {}
-    if preprocess_mode in {"paper_local", "market_cap"}:
+    if preprocess_mode in {"paper_local", "market_cap", MARKET_CAP_INDUSTRY_MODE}:
         cap = market_data["cap"].reindex(index=close.index, columns=close.columns)
         styles["log_total_market_cap"] = np.log(cap.where(cap > 0)).reindex(
             index=signal_index
@@ -222,10 +231,18 @@ def preprocess_training_factor(
             context.market_data["st"],
         )
     winsorized = median_mad_winsorize(factor)
-    residual = joint_cross_sectional_residualize(
-        winsorized,
-        context.style_exposures,
-    )
+    if context.preprocess_mode == MARKET_CAP_INDUSTRY_MODE:
+        residual, _ = neutralize_factor_by_industry_and_market_cap(
+            winsorized,
+            context.market_data["industry"],
+            context.market_data["cap"],
+            min_industry_observations=MIN_INDUSTRY_OBSERVATIONS,
+        )
+    else:
+        residual = joint_cross_sectional_residualize(
+            winsorized,
+            context.style_exposures,
+        )
     return cross_sectional_zscore(residual)
 
 
@@ -314,7 +331,7 @@ def evaluate_program_fitness(
 
 
 def fitness_contract(context: FitnessContext) -> dict[str, Any]:
-    return {
+    contract = {
         "train_start": context.train_start,
         "train_end": context.train_end,
         "horizon": context.horizon,
@@ -324,3 +341,14 @@ def fitness_contract(context: FitnessContext) -> dict[str, Any]:
         "minimum_ic_days": context.minimum_ic_days,
         **context.sample_metadata,
     }
+    if context.preprocess_mode == MARKET_CAP_INDUSTRY_MODE:
+        contract.update(
+            {
+                "neutralization_model": (
+                    "factor ~ intercept + log(total_market_cap) + "
+                    "industry_l1_fixed_effects"
+                ),
+                "minimum_industry_observations": MIN_INDUSTRY_OBSERVATIONS,
+            }
+        )
+    return contract

@@ -91,7 +91,7 @@ def main() -> None:
             "test_end": days[-1].date().isoformat(),
             "horizon": 1,
             "n_quantiles": 5,
-            "preprocess_mode": "none",
+            "preprocess_mode": "market_cap_industry",
             "population_size": 4,
             "generations": 1,
             "hall_of_fame": 4,
@@ -120,6 +120,7 @@ def main() -> None:
             command = factory.calls[0][0]
             assert command[command.index("--campaign") + 1] == "web_gp_contract"
             assert command[command.index("--compute-backend") + 1] == "cpu"
+            assert command[command.index("--preprocess-mode") + 1] == "market_cap_industry"
             assert "--no-admit" in command
             assert "--forever" not in command
             assert factory.calls[0][1]["start_new_session"] is True

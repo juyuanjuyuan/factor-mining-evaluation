@@ -2,11 +2,10 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from evaluators import evaluation_method_names, resolve_evaluation_methods
-
 from ..db import Database
 from ..models import TemplateInput
 from ..services.funnel_service import normalize_funnel_stages
+from ..services.pipeline_service import validate_ordered_pipeline
 from .dependencies import get_db
 
 router = APIRouter(prefix="/templates", tags=["templates"])
@@ -16,9 +15,7 @@ def _validate(payload: TemplateInput) -> dict:
     data = payload.model_dump()
     if data["kind"] == "methods":
         try:
-            data["methods"] = list(
-                evaluation_method_names(resolve_evaluation_methods(data["methods"]))
-            )
+            data["methods"] = validate_ordered_pipeline(data["methods"])
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
         data["params"] = {}

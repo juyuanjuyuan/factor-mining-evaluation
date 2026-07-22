@@ -18,7 +18,11 @@ from typing import Any, Mapping
 import numpy as np
 
 from engine import load_market_data
-from evaluation_standards import evaluate_factor_standards
+from evaluation_standards import (
+    IC_STANDARD_NAME,
+    PROFITABILITY_STANDARD_NAME,
+    evaluate_factor_standards,
+)
 from factor_correlation import CORRELATION_THRESHOLD
 
 from .admission import admit_factor_to_library
@@ -28,7 +32,7 @@ from .evolution import (
     evaluate_population,
     evolve_population,
     initial_population,
-    select_diverse_components,
+    select_top_components,
     scored_sort_key,
     update_hall_of_fame,
 )
@@ -73,6 +77,9 @@ def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+TEST_SCREENING_PROTOCOL = "profitability_then_ic_joint_neutral_v1"
+
+
 @dataclass(frozen=True)
 class MiningCampaignConfig:
     campaign: str
@@ -97,6 +104,7 @@ class MiningCampaignConfig:
     seed: int = 20190610
     admit: bool = True
     project: str = "遗传规划"
+    test_screening_protocol: str = TEST_SCREENING_PROTOCOL
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "campaign", _slug(self.campaign))
@@ -113,7 +121,9 @@ class MiningCampaignConfig:
         if self.horizon < 1 or self.n_quantiles < 3:
             raise ValueError("horizon must be positive and n_quantiles at least three")
         if not 0 < self.significance_level < 1:
-            raise ValueError("significance_level must be between zero and one")
+            raise ValueError("significance_level must be strictly between zero and one")
+        if self.test_screening_protocol != TEST_SCREENING_PROTOCOL:
+            raise ValueError("Unknown GP test-screening protocol")
         if not 0 < self.correlation_threshold < 1:
             raise ValueError("correlation_threshold must be between zero and one")
 
@@ -225,10 +235,13 @@ class GeneticMiningRunner:
 
     def _load_market_data(self):
         terminal_expression = " + ".join(f"({item})" for item in self.config.evolution.terminals)
+        # Both frozen test screens apply joint size/industry neutralization,
+        # regardless of the training-fitness preprocessing.
+        extra_symbols = {"cap", "amt", "limit", "st", "industry"}
         return load_market_data(
             self.config.data_dir,
             terminal_expression,
-            extra_symbols={"cap", "amt", "limit", "st"},
+            extra_symbols=extra_symbols,
         )
 
     def _load_fitness_cache(self) -> dict[str, FitnessResult]:
@@ -383,18 +396,16 @@ class GeneticMiningRunner:
                 }
                 _atomic_json(self._checkpoint_path(cycle), checkpoint)
 
-        components, diversity_audit = select_diverse_components(
+        components, selection_audit = select_top_components(
             hall,
-            self.fitness_context,
             self.config.evolution,
-            backend=self.fitness_backend,
         )
         checkpoint = {
             **checkpoint,
             "stage": "testing",
             "next_generation": self.config.evolution.generations,
             "components": [item.as_dict() for item in components],
-            "diversity_audit": diversity_audit,
+            "selection_audit": selection_audit,
             "hall_of_fame": [
                 item.as_dict() for item in sorted(hall.values(), key=scored_sort_key)
             ],
@@ -405,7 +416,7 @@ class GeneticMiningRunner:
             self.active_path,
             {"cycle": cycle, "status": "testing", "updated_at": _now()},
         )
-        return components, diversity_audit
+        return components, selection_audit
 
     def _candidate_name(self, cycle: int, rank: int, expression: str) -> str:
         digest = hashlib.sha256(expression.encode("utf-8")).hexdigest()[:8]
@@ -429,26 +440,43 @@ class GeneticMiningRunner:
                 records.append(_read_json(result_path))
                 continue
             try:
-                standards = evaluate_factor_standards(
+                profitability = evaluate_factor_standards(
                     factor_name=name,
                     expression=component.fitness.expression,
                     data_dir=self.config.data_dir,
-                    output_dir=candidate_dir / "test_evaluation",
+                    output_dir=candidate_dir / "test_evaluation" / "profitability",
                     signal_start=self.config.test_start,
                     signal_end=self.config.test_end,
-                    standards="all",
+                    standards=(PROFITABILITY_STANDARD_NAME,),
                     horizon=self.config.horizon,
                     n_quantiles=self.config.n_quantiles,
                     preloaded_data=self.market_data,
-                    significance_level=self.config.significance_level,
-                    minimum_ic_mean=self.config.minimum_ic_mean,
                     minimum_rolling_sharpe_60_median=(
                         self.config.minimum_rolling_sharpe_60_median
                     ),
                     minimum_annualized_return=self.config.minimum_annualized_return,
                 )
+                profitability_passed = profitability["overall_passed"]
+                ic: dict[str, Any] | None = None
+                if profitability_passed:
+                    ic = evaluate_factor_standards(
+                        factor_name=name,
+                        expression=component.fitness.expression,
+                        data_dir=self.config.data_dir,
+                        output_dir=candidate_dir / "test_evaluation" / "ic",
+                        signal_start=self.config.test_start,
+                        signal_end=self.config.test_end,
+                        standards=(IC_STANDARD_NAME,),
+                        horizon=self.config.horizon,
+                        n_quantiles=self.config.n_quantiles,
+                        preloaded_data=self.market_data,
+                        significance_level=self.config.significance_level,
+                        minimum_ic_mean=self.config.minimum_ic_mean,
+                    )
+                ic_passed = bool(ic and ic["overall_passed"])
+                test_overall_passed = profitability_passed and ic_passed
                 admission: dict[str, Any] | None = None
-                if standards["overall_passed"] and self.config.admit:
+                if test_overall_passed and self.config.admit:
                     admission = admit_factor_to_library(
                         factor_name=name,
                         expression=component.fitness.expression,
@@ -469,11 +497,18 @@ class GeneticMiningRunner:
                     "factor_name": name,
                     "expression": component.fitness.expression,
                     "training_fitness": component.fitness.as_dict(),
-                    "test_overall_passed": standards["overall_passed"],
-                    "standards_summary_path": standards["summary_path"],
+                    "testing_protocol": TEST_SCREENING_PROTOCOL,
+                    "profitability_passed": profitability_passed,
+                    "ic_checked": ic is not None,
+                    "ic_passed": ic_passed if ic is not None else None,
+                    "test_overall_passed": test_overall_passed,
+                    "profitability_summary_path": profitability["summary_path"],
+                    "ic_summary_path": ic["summary_path"] if ic else None,
                     "standard_gates": {
                         key: value["gate"]
-                        for key, value in standards["standards"].items()
+                        for result in (profitability, ic)
+                        if result is not None
+                        for key, value in result["standards"].items()
                     },
                     "admission": admission,
                     "admitted": bool(
@@ -488,6 +523,10 @@ class GeneticMiningRunner:
                     "factor_name": name,
                     "expression": component.fitness.expression,
                     "training_fitness": component.fitness.as_dict(),
+                    "testing_protocol": TEST_SCREENING_PROTOCOL,
+                    "profitability_passed": False,
+                    "ic_checked": False,
+                    "ic_passed": None,
                     "test_overall_passed": False,
                     "admission": None,
                     "admitted": False,
@@ -506,9 +545,13 @@ class GeneticMiningRunner:
             components = tuple(
                 ScoredTree.from_dict(item) for item in checkpoint.get("components", [])
             )
-            diversity_audit = list(checkpoint.get("diversity_audit", []))
+            # Pre-change checkpoints already contain a frozen candidate list.
+            # Preserve it rather than changing a campaign mid-test.
+            selection_audit = list(
+                checkpoint.get("selection_audit", checkpoint.get("diversity_audit", []))
+            )
         else:
-            components, diversity_audit = self._run_evolution(cycle, checkpoint)
+            components, selection_audit = self._run_evolution(cycle, checkpoint)
         candidates = self._evaluate_candidates(cycle, components)
         summary = {
             "campaign": self.config.campaign,
@@ -532,7 +575,7 @@ class GeneticMiningRunner:
             ),
             "admitted_count": sum(bool(item.get("admitted")) for item in candidates),
             "failed_count": sum(item.get("status") == "failed" for item in candidates),
-            "diversity_audit": diversity_audit,
+            "selection_audit": selection_audit,
             "candidates": candidates,
         }
         _atomic_json(self._cycle_dir(cycle) / "cycle_summary.json", summary)

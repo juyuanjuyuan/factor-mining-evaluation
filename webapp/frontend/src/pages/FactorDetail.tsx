@@ -1,6 +1,6 @@
-import { CheckCircleOutlined, EditOutlined, RocketOutlined, TagsOutlined } from '@ant-design/icons'
+import { CheckCircleOutlined, DeleteOutlined, EditOutlined, RocketOutlined, TagsOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Card, Descriptions, Empty, Space, Table, Tag, Typography, message } from 'antd'
+import { Button, Card, Descriptions, Empty, Popconfirm, Space, Table, Tag, Typography, message } from 'antd'
 import { useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api, Factor } from '../api/client'
@@ -31,6 +31,18 @@ export default function FactorDetail() {
     },
     onError: (error) => message.error(error.message),
   })
+  const removeFromLibrary = useMutation({
+    mutationFn: (item: Factor) => api.removeFromFactorLibrary(item.batch_id, item.factor_name),
+    onSuccess: () => {
+      message.success('已移出因子库；源测试因子和历史评价均已保留')
+      queryClient.invalidateQueries({ queryKey: ['factors'] })
+      queryClient.invalidateQueries({ queryKey: ['test-factors'] })
+      queryClient.invalidateQueries({ queryKey: ['factor-correlation'] })
+      queryClient.invalidateQueries({ queryKey: ['factor-tags', 'factor'] })
+      navigate('/factors')
+    },
+    onError: (error) => message.error(error.message),
+  })
   if (factor.isLoading) return <Card loading />
   if (!factor.data) return <Empty description="因子不存在" />
   const item: Factor = factor.data
@@ -53,6 +65,20 @@ export default function FactorDetail() {
             >
               {item.submitted ? '已提交到因子库' : '提交到因子库'}
             </Button>
+          )}
+          {item.library_scope === 'factor' && (
+            <Popconfirm
+              title="移出因子库？"
+              description="仅移除正式库副本；源测试因子、标签和历史评价会保留。"
+              okText="确认移出"
+              cancelText="取消"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => removeFromLibrary.mutate(item)}
+            >
+              <Button danger icon={<DeleteOutlined />} loading={removeFromLibrary.isPending}>
+                移出因子库
+              </Button>
+            </Popconfirm>
           )}
           <Button type="primary" icon={<RocketOutlined />} onClick={() => setRunOpen(true)}>
             运行评价

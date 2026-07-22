@@ -36,6 +36,12 @@ def synthetic_market_data() -> dict[str, pd.DataFrame]:
         index=days,
         columns=codes,
     )
+    industry = pd.DataFrame(
+        np.tile(np.repeat(np.array(["A", "B", "C"], dtype=object), 10), (len(days), 1)),
+        index=days,
+        columns=codes,
+        dtype="string",
+    )
     return {
         "c": close,
         "o": open_prices,
@@ -46,6 +52,7 @@ def synthetic_market_data() -> dict[str, pd.DataFrame]:
         ),
         "limit": pd.DataFrame(0.10, index=days, columns=codes),
         "st": pd.DataFrame(False, index=days, columns=codes),
+        "industry": industry,
     }
 
 
@@ -53,6 +60,8 @@ def test_registry_matches_webapp_templates() -> None:
     standards = resolve_evaluation_standards("all")
     assert standards[0].method_names == IC_METHOD_NAMES
     assert standards[1].method_names == PROFITABILITY_METHOD_NAMES
+    assert IC_METHOD_NAMES[1] == "industry_market_cap_neutralize"
+    assert PROFITABILITY_METHOD_NAMES[0] == "industry_market_cap_neutralize"
 
 
 def test_gate_logic() -> None:
@@ -64,6 +73,7 @@ def test_gate_logic() -> None:
         }
     )
     assert ic.passed
+    assert ic.conditions[1].name == "市值+行业联合中性 Rank IC 均值为正"
     assert not evaluate_ic_gate(
         {
             "prefix_truncation_passed": True,

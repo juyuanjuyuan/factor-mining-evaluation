@@ -259,6 +259,25 @@ class FactorCorrelationService:
             self._write_matrix(prepared.matrix)
             self._write_metadata(prepared.definitions)
 
+    def invalidate_removed_factor(self, record: Mapping[str, Any]) -> None:
+        """Discard derived cache entries for a factor removed from the library.
+
+        The registry is the source of truth.  Removing the matrix metadata
+        forces the next read or admission to rebuild a matrix for exactly the
+        remaining definitions, without requiring market data during removal.
+        """
+        definition = self._definition(record)
+        with self._lock:
+            for path in (
+                self._exposure_path(definition),
+                self.matrix_path,
+                self.metadata_path,
+            ):
+                try:
+                    path.unlink()
+                except FileNotFoundError:
+                    pass
+
     def _ensure_base(self, definitions: tuple[FactorDefinition, ...]) -> pd.DataFrame:
         if self._cache_matches(definitions):
             return self._read_matrix(definitions)

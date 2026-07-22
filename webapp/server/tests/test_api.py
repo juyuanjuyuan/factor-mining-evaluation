@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
+import json
 import os
-import shutil
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -39,6 +39,40 @@ def write_minimal_market_data(data_dir: Path) -> None:
     volume.to_parquet(data_dir / "volume_df.pq")
 
 
+def write_alpha_registry(registry_dir: Path) -> None:
+    """Create the read-only catalog fixture without relying on a live batch file."""
+
+    factors = [
+        {
+            "number": number,
+            "factor_name": f"alpha{number:03d}",
+            "entered_at": "2026-01-01T00:00:00+08:00",
+            "implementation_set": "exact",
+            "expression": "rank_cs(c)",
+            "paper_expression": "",
+            "required_symbols": ["c"],
+            "uses_proxy": False,
+            "proxy_description": "",
+        }
+        for number in range(1, 84)
+    ]
+    payload = {
+        "schema_version": 1,
+        "batch_id": "alpha101_runnable_factors",
+        "batch_name": "Alpha101 API test fixture",
+        "batch_version": 1,
+        "generated_at": "2026-01-01T00:00:00+08:00",
+        "source": {"type": "test", "name": "Synthetic Alpha101 catalog"},
+        "formula_language": "engine expression",
+        "factor_count": len(factors),
+        "factors": factors,
+    }
+    (registry_dir / "alpha101_runnable_factors.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
 def main() -> None:
     with TemporaryDirectory() as temporary:
         temporary_root = Path(temporary)
@@ -58,10 +92,7 @@ def main() -> None:
 
         api_registry_dir = temporary_root / "api-registry"
         api_registry_dir.mkdir()
-        shutil.copy2(
-            PROJECT_ROOT / "factor_registry" / "alpha101_runnable_factors.json",
-            api_registry_dir / "alpha101_runnable_factors.json",
-        )
+        write_alpha_registry(api_registry_dir)
         with TestClient(app) as client:
             # The app lifespan creates a registry from the checkout by default.
             # Replace it with a temporary one so this contract test never reads
@@ -92,6 +123,11 @@ def main() -> None:
                 "quantile_cumulative",
                 "quantile_plot",
             ]
+            horizon_decay_method = next(
+                item for item in methods.json() if item["name"] == "ic_horizon_decay"
+            )
+            assert horizon_decay_method["requires"] == []
+            assert horizon_decay_method["required_data_symbols"] == ["o"]
             industry_method = next(
                 item for item in methods.json() if item["name"] == "industry_neutralize"
             )
@@ -339,6 +375,28 @@ def main() -> None:
                 "api_correlation_factor",
                 "api_volume_correlation_factor",
             ]
+            removed = client.delete(
+                "/api/factors/webapp_factor_library/api_volume_correlation_factor"
+            )
+            assert removed.status_code == 204
+            assert [
+                row["factor_name"] for row in client.get("/api/factors").json()
+            ] == ["api_correlation_factor"]
+            source_after_withdrawal = client.get(
+                "/api/test-factors"
+            ).json()
+            source_row = next(
+                row
+                for row in source_after_withdrawal
+                if row["factor_name"] == "api_volume_correlation_factor"
+            )
+            assert not source_row["submitted"]
+            rebuilt_matrix = client.get("/api/factor-correlation")
+            assert rebuilt_matrix.status_code == 200
+            assert rebuilt_matrix.json()["factor_names"] == ["api_correlation_factor"]
+            assert client.delete(
+                "/api/factors/webapp_factor_library/api_volume_correlation_factor"
+            ).status_code == 404
             invalid = client.post(
                 "/api/expressions/validate",
                 json={"expression": "__import__('os').system('whoami')"},
@@ -423,10 +481,33 @@ def main() -> None:
                         }
                     ],
                     "methods": ["rank_ic", "rank_icir"],
+                    "signal_start": "2024-01-10",
+                    "signal_end": "2024-03-15",
                 },
             )
             assert created.status_code == 201
             assert created.json()["runs"][0]["status"] == "queued"
+            assert created.json()["params"]["signal_start"] == "2024-01-10"
+            assert created.json()["params"]["signal_end"] == "2024-03-15"
+            assert created.json()["runs"][0]["run_params"] == {
+                "signal_start": "2024-01-10",
+                "signal_end": "2024-03-15",
+            }
+            missing_window_end = client.post(
+                "/api/jobs",
+                json={
+                    "kind": "evaluate",
+                    "factors": [
+                        {
+                            "factor_name": factor["factor_name"],
+                            "batch_id": factor["batch_id"],
+                        }
+                    ],
+                    "methods": ["rank_ic", "rank_icir"],
+                    "signal_start": "2024-01-10",
+                },
+            )
+            assert missing_window_end.status_code == 422
             created_job_id = created.json()["id"]
             created_run_id = created.json()["runs"][0]["id"]
             active_job_delete = client.delete(f"/api/jobs/{created_job_id}")
@@ -465,7 +546,6 @@ def main() -> None:
             assert templated_evaluation.json()["runs"][0]["methods"] == default_template[
                 "methods"
             ]
-
             editable_stages = stages.json()
             editable_stages[0]["methods"].append("rank_ic")
             funnel_template = client.post(
@@ -592,10 +672,7 @@ def main() -> None:
 
         registry_dir = temporary_root / "service-registry"
         registry_dir.mkdir()
-        shutil.copy2(
-            PROJECT_ROOT / "factor_registry" / "alpha101_runnable_factors.json",
-            registry_dir / "alpha101_runnable_factors.json",
-        )
+        write_alpha_registry(registry_dir)
         service = RegistryService(
             Settings(
                 project_root=PROJECT_ROOT,
@@ -671,6 +748,10 @@ def main() -> None:
             n_quantiles=10,
             runs_dir=funnel_settings.runs_dir,
             stages=custom_funnel_stages,
+            run_params={
+                "signal_start": "2024-01-10",
+                "signal_end": "2024-03-15",
+            },
         )
         funnel_db.create_job(
             {
@@ -698,6 +779,11 @@ def main() -> None:
             "skipped",
         ]
         assert funnel_job["runs"][1]["methods"][-1] == "quantile_returns"
+        assert all(
+            run["run_params"]
+            == {"signal_start": "2024-01-10", "signal_end": "2024-03-15"}
+            for run in funnel_job["runs"]
+        )
 
     print("webapp API contract passed")
 

@@ -45,14 +45,24 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--quantiles", type=int, default=10)
     parser.add_argument(
         "--preprocess-mode",
-        choices=("paper_local", "market_cap", "none"),
+        choices=("paper_local", "market_cap_industry", "market_cap", "none"),
         default="paper_local",
+        help=(
+            "training preprocessing; market_cap_industry is the current joint "
+            "industry fixed-effect + log-cap mode, while market_cap is retained "
+            "only for legacy campaign compatibility"
+        ),
     )
     parser.add_argument("--minimum-ic-days", type=int, default=60)
     parser.add_argument("--population-size", type=int, default=1000)
     parser.add_argument("--generations", type=int, default=3)
     parser.add_argument("--hall-of-fame", type=int, default=100)
-    parser.add_argument("--components", type=int, default=10)
+    parser.add_argument(
+        "--components",
+        type=int,
+        default=100,
+        help="highest-fitness HOF candidates frozen for test evaluation",
+    )
     parser.add_argument("--init-depth-min", type=int, default=1)
     parser.add_argument("--init-depth-max", type=int, default=4)
     parser.add_argument("--tournament-size", type=int, default=20)
@@ -64,7 +74,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--p-point-replace", type=float, default=0.40)
     parser.add_argument("--max-depth", type=int, default=8)
     parser.add_argument("--max-nodes", type=int, default=127)
-    parser.add_argument("--candidate-correlation-threshold", type=float, default=0.90)
     parser.add_argument("--elite-size", type=int, default=1)
     parser.add_argument("--n-jobs", type=int, default=1)
     parser.add_argument(
@@ -80,10 +89,10 @@ def build_parser() -> argparse.ArgumentParser:
         dest="terminals",
         help="repeat to replace the paper terminal set; engine expressions are accepted",
     )
-    parser.add_argument("--significance-level", type=float, default=0.05)
-    parser.add_argument("--minimum-ic-mean", type=float, default=0.0)
     parser.add_argument("--minimum-sharpe-60-median", type=float, default=1.0)
     parser.add_argument("--minimum-annualized-return", type=float, default=0.30)
+    parser.add_argument("--significance-level", type=float, default=0.05)
+    parser.add_argument("--minimum-ic-mean", type=float, default=0.0)
     parser.add_argument("--correlation-threshold", type=float, default=0.75)
     parser.add_argument("--seed", type=int, default=20190610)
     parser.add_argument("--project", default="遗传规划")
@@ -114,7 +123,6 @@ def build_config(args: argparse.Namespace) -> MiningCampaignConfig:
         p_point_replace=args.p_point_replace,
         max_depth=args.max_depth,
         max_nodes=args.max_nodes,
-        candidate_correlation_threshold=args.candidate_correlation_threshold,
         elite_size=args.elite_size,
         n_jobs=args.n_jobs,
         compute_backend=args.compute_backend,

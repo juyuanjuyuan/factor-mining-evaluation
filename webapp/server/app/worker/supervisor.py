@@ -185,6 +185,7 @@ class WorkerSupervisor:
                     n_quantiles=run["n_quantiles"],
                     runs_dir=self.settings.runs_dir,
                     status="skipped",
+                    run_params=run["run_params"],
                 )
                 for index in range(next_index, len(stages))
             ]
@@ -198,5 +199,6 @@ class WorkerSupervisor:
             horizon=run["horizon"],
             n_quantiles=run["n_quantiles"],
             runs_dir=self.settings.runs_dir,
+            run_params=run["run_params"],
         )
         self.db.add_runs(run["job_id"], [next_run])

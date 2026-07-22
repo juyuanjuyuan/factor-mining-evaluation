@@ -179,6 +179,8 @@ def main() -> None:
             wait_until(lambda: db.get_run(split_run)["status"] == "succeeded")
             split_result = db.get_run(split_run)
             assert split_result
+            assert split_result["result"]["signal_start"] == "2024-01-10"
+            assert split_result["result"]["signal_end"] == "2024-03-15"
             assert split_result["result"]["sample_start_day"] == "2024-01-10"
             assert split_result["result"]["sample_end_day"] == "2024-03-13"
             split_detail = RunReader().get_detail(split_result, "ic")

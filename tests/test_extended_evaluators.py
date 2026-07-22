@@ -17,6 +17,7 @@ from evaluators import (
     EvaluationContext,
     EvaluationState,
     compare_ic_trend_filters,
+    evaluate_ic_horizon_decay,
     evaluate_market_cap_neutralization,
     evaluate_ic_peak_decay,
     evaluate_ic_trend_filter,
@@ -30,6 +31,7 @@ from evaluators import (
     future_data_perturbation_test,
     fourier_low_pass_ic,
     ic_peak_decay,
+    ic_horizon_decay,
     kalman_ic_trend,
     mask_untradeable_entries,
     newey_west_mean_test,
@@ -42,6 +44,7 @@ from evaluators import (
     second_order_low_pass_ic,
     top_quantile_performance,
 )
+from evaluators.base import method_metadata
 from evaluators.rolling_drawdown import (
     evaluate_rolling_drawdown as direct_evaluate_rolling_drawdown,
 )
@@ -219,6 +222,94 @@ def test_ic_peak_decay_is_60_day_rolling_mean_ic() -> None:
         "rank_ic",
         "ic_peak_decay",
     )
+
+
+def test_ic_horizon_decay_uses_one_common_signal_sample() -> None:
+    days = pd.date_range("2024-01-02", periods=260, freq="B")
+    codes = [f"{number:06d}" for number in range(5)]
+    growth = np.linspace(0.0001, 0.0005, len(codes))
+    open_prices = pd.DataFrame(
+        np.exp(np.arange(len(days))[:, None] * growth[None, :]),
+        index=days,
+        columns=codes,
+    )
+    factor = pd.DataFrame(
+        np.tile(growth, (len(days), 1)),
+        index=days,
+        columns=codes,
+    )
+
+    metrics, detail = ic_horizon_decay(factor, open_prices)
+    assert detail.index.equals(pd.Index(range(20, 253), name="horizon"))
+    assert detail.columns.tolist() == ["mean_rank_ic"]
+    assert np.allclose(detail["mean_rank_ic"], 1.0)
+    assert metrics["ic_horizon_decay_horizon_count"] == 233
+    assert metrics["ic_horizon_decay_structural_signal_day_count"] == 7
+    assert metrics["ic_horizon_decay_common_signal_day_count"] == 7
+    assert metrics["ic_horizon_decay_common_end_day"] == days[6].date().isoformat()
+
+    # open[t+1+20] is unavailable only for the first candidate signal date.
+    # Exact common-sample semantics must therefore remove that date from every H.
+    missing_one_horizon = open_prices.copy()
+    missing_one_horizon.iloc[21] = np.nan
+    dropped_metrics, dropped_detail = ic_horizon_decay(
+        factor,
+        missing_one_horizon,
+    )
+    assert np.allclose(dropped_detail["mean_rank_ic"], 1.0)
+    assert dropped_metrics["ic_horizon_decay_structural_signal_day_count"] == 7
+    assert dropped_metrics["ic_horizon_decay_common_signal_day_count"] == 6
+    assert dropped_metrics["ic_horizon_decay_dropped_signal_day_count"] == 1
+    assert dropped_metrics["ic_horizon_decay_common_start_day"] == days[1].date().isoformat()
+
+    bounded_factor = factor.loc[days[2] : days[257]]
+    context = EvaluationContext(
+        factor_name="ic_horizon_decay",
+        artifact_name="ic_horizon_decay",
+        factor=bounded_factor,
+        close=open_prices.loc[bounded_factor.index],
+        forward_return=pd.DataFrame(0.0, index=bounded_factor.index, columns=codes),
+        horizon=1,
+        n_quantiles=5,
+        output_dir=Path("."),
+        market_data={"o": open_prices},
+        source_factor=factor,
+    )
+    state = EvaluationState(context)
+    evaluate_ic_horizon_decay(state)
+    assert state.details["ic_horizon_decay"].equals(detail)
+    assert state.metrics["ic_horizon_decay_common_signal_day_count"] == 5
+    assert state.metrics["ic_horizon_decay_common_start_day"] == days[2].date().isoformat()
+    assert state.metrics["ic_horizon_decay_common_end_day"] == days[6].date().isoformat()
+
+    resolved = resolve_evaluation_methods("ic_horizon_decay")
+    assert evaluation_method_names(resolved) == ("ic_horizon_decay",)
+    assert method_metadata(resolved[0]).requires == ()
+    assert method_metadata(resolved[0]).required_data_symbols == ("o",)
+
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        open_prices.to_parquet(root / "open_df.pq")
+        open_prices.to_parquet(root / "close_df.pq")
+        result = evaluate_factor_expression(
+            factor_name="ic_horizon_decay_pipeline",
+            expression="rank_cs(c)",
+            data_dir=root,
+            output_dir=root / "result",
+            evaluation_methods=resolved,
+        )
+        assert result["evaluation_methods"] == ["ic_horizon_decay"]
+        assert set(result["detail_paths"]) == {"ic_horizon_decay"}
+        persisted = pd.read_csv(
+            result["detail_paths"]["ic_horizon_decay"],
+            index_col=0,
+        )
+        assert persisted.index.tolist() == list(range(20, 253))
+        assert persisted.columns.tolist() == ["mean_rank_ic"]
+        assert result["metrics"]["ic_horizon_decay_max_horizon"] == 252
+        assert '"ic_horizon_decay":"details/' in result["metrics"][
+            "evaluation_details"
+        ]
 
 
 def test_ic_trend_filter() -> None:
@@ -905,6 +996,7 @@ def main() -> None:
     test_market_cycle_backgrounds()
     test_prefix_truncation_consistency()
     test_newey_west()
+    test_ic_horizon_decay_uses_one_common_signal_sample()
     test_ic_peak_decay_is_60_day_rolling_mean_ic()
     test_ic_trend_filter()
     test_market_cap_neutralization()

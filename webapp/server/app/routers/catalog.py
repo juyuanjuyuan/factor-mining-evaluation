@@ -294,9 +294,13 @@ def delete_factor(
     factor_name: str,
     registry: RegistryService = Depends(get_registry),
 ) -> None:
-    if batch_id != registry.settings.test_batch_id:
-        raise HTTPException(403, "只有测试库中新建的因子可删除")
-    if not registry.delete(batch_id, factor_name):
+    if batch_id == registry.settings.test_batch_id:
+        deleted = registry.delete(batch_id, factor_name)
+    elif batch_id == registry.settings.submitted_batch_id:
+        deleted = registry.remove_from_library(batch_id, factor_name)
+    else:
+        raise HTTPException(403, "只有测试库中新建的因子可删除，或可将已提交因子移出因子库")
+    if not deleted:
         raise HTTPException(404, "因子不存在")
 
 

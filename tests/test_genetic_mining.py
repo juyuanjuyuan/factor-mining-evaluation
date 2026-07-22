@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -14,12 +15,15 @@ import _bootstrap  # noqa: F401
 from engine import DEFAULT_FILES, parse_and_validate_expression
 from genetic_mining.evolution import (
     EvolutionConfig,
+    ScoredTree,
     evaluate_population,
     evolve_population,
     initial_population,
+    select_top_components,
 )
 from genetic_mining.admission import admit_factor_to_library
 from genetic_mining.fitness import (
+    FitnessResult,
     evaluate_program_fitness,
     prepare_fitness_context,
 )
@@ -58,6 +62,7 @@ def synthetic_market_data(periods: int = 190) -> dict[str, pd.DataFrame]:
         columns=codes,
     )
     amount = volume * close
+    industry_labels = np.repeat(np.array(["A", "B", "C"], dtype=object), 8)
     return {
         "c": close,
         "o": open_prices,
@@ -73,6 +78,12 @@ def synthetic_market_data(periods: int = 190) -> dict[str, pd.DataFrame]:
         ),
         "limit": pd.DataFrame(0.10, index=days, columns=codes),
         "st": pd.DataFrame(False, index=days, columns=codes),
+        "industry": pd.DataFrame(
+            np.tile(industry_labels, (periods, 1)),
+            index=days,
+            columns=codes,
+            dtype="string",
+        ),
     }
 
 
@@ -108,6 +119,42 @@ def test_expression_trees_and_evolution() -> None:
     offspring = evolve_population(scored, rng, config)
     assert len(offspring) == config.population_size
     assert len({tree.to_expression() for tree in offspring}) == len(offspring)
+
+
+def test_hall_of_fame_selects_top_fitness_without_internal_correlation_gate() -> None:
+    config = EvolutionConfig(
+        generations=1,
+        population_size=4,
+        hall_of_fame=4,
+        n_components=3,
+        tournament_size=2,
+    )
+    scores = {"c": 0.30, "o": 0.10, "h": 0.20, "l": None}
+    hall = {
+        expression: ScoredTree(
+            tree=ExpressionTree("terminal", expression),
+            fitness=FitnessResult(
+                expression=expression,
+                raw_fitness=score,
+                adjusted_fitness=score,
+                ic_mean=score,
+                ic_std=0.01 if score is not None else None,
+                ir=1.0 if score is not None else None,
+                ic_count=60 if score is not None else 0,
+                pair_count=1200 if score is not None else 0,
+                node_count=1,
+                depth=1,
+                error="" if score is not None else "invalid",
+            ),
+        )
+        for expression, score in scores.items()
+    }
+
+    selected, audit = select_top_components(hall, config)
+
+    assert [item.fitness.expression for item in selected] == ["c", "h", "o"]
+    assert [item["rank"] for item in audit] == [1, 2, 3]
+    assert all(item["selected_for_frozen_test"] for item in audit)
 
 
 def test_training_fitness_cannot_see_test_returns() -> None:
@@ -202,7 +249,94 @@ def test_resumable_single_cycle_smoke() -> None:
         assert (config.root / "cycles/cycle_000001/checkpoint.json").is_file()
         assert (config.root / "cycles/cycle_000001/cycle_summary.json").is_file()
         assert summary["candidates"][0]["status"] == "completed"
+        assert set(summary["candidates"][0]["standard_gates"]) == {"profitability_test"}
         assert not summary["candidates"][0]["admitted"]
+
+
+def test_profitability_screen_runs_ic_only_for_survivors() -> None:
+    data = synthetic_market_data(periods=130)
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        data_dir = root / "data"
+        _write_market_data(data_dir, data)
+        days = data["c"].index
+        config = MiningCampaignConfig(
+            campaign="two-stage-screen",
+            train_start=str(days[0].date()),
+            train_end=str(days[64].date()),
+            test_start=str(days[65].date()),
+            test_end=str(days[-1].date()),
+            data_dir=data_dir,
+            output_dir=root / "outputs",
+            library_file=root / "factor_library.json",
+            correlation_state_dir=root / "state",
+            evolution=EvolutionConfig(
+                generations=1,
+                population_size=2,
+                hall_of_fame=2,
+                n_components=2,
+                tournament_size=1,
+                terminals=("c", "o"),
+            ),
+            preprocess_mode="none",
+            minimum_ic_days=20,
+            admit=False,
+        )
+        component = lambda expression: ScoredTree(
+            tree=ExpressionTree("terminal", expression),
+            fitness=FitnessResult(
+                expression=expression,
+                raw_fitness=0.1,
+                adjusted_fitness=0.1,
+                ic_mean=0.1,
+                ic_std=0.1,
+                ir=1.0,
+                ic_count=60,
+                pair_count=1000,
+                node_count=1,
+                depth=1,
+            ),
+        )
+        calls: list[tuple[str, str]] = []
+
+        def fake_evaluate_factor_standards(*, expression, standards, **_kwargs):
+            standard = next(iter(standards))
+            calls.append((expression, standard))
+            passed = expression == "o" and standard == "profitability_test"
+            return {
+                "overall_passed": passed,
+                "summary_path": f"/{expression}/{standard}.json",
+                "standards": {standard: {"gate": {"passed": passed}}},
+            }
+
+        runner = GeneticMiningRunner(config)
+        try:
+            with patch(
+                "genetic_mining.runner.evaluate_factor_standards",
+                side_effect=fake_evaluate_factor_standards,
+            ):
+                records = runner._evaluate_candidates(
+                    1,
+                    (component("c"), component("o")),
+                )
+        finally:
+            runner.close()
+
+        assert calls == [
+            ("c", "profitability_test"),
+            ("o", "profitability_test"),
+            ("o", "ic_test"),
+        ]
+        assert records[0]["profitability_passed"] is False
+        assert records[0]["ic_checked"] is False
+        assert set(records[0]["standard_gates"]) == {"profitability_test"}
+        assert records[1]["profitability_passed"] is True
+        assert records[1]["ic_checked"] is True
+        assert records[1]["ic_passed"] is False
+        assert set(records[1]["standard_gates"]) == {
+            "profitability_test",
+            "ic_test",
+        }
 
 
 def test_correlation_gated_library_admission() -> None:
@@ -250,8 +384,10 @@ def test_correlation_gated_library_admission() -> None:
 
 def main() -> None:
     test_expression_trees_and_evolution()
+    test_hall_of_fame_selects_top_fitness_without_internal_correlation_gate()
     test_training_fitness_cannot_see_test_returns()
     test_resumable_single_cycle_smoke()
+    test_profitability_screen_runs_ic_only_for_survivors()
     test_correlation_gated_library_admission()
     print("genetic mining contracts passed")
 

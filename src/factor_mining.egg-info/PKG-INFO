@@ -9,4 +9,5 @@ Requires-Dist: pandas
 Requires-Dist: pyarrow
 Provides-Extra: webapp
 Requires-Dist: fastapi>=0.115; extra == "webapp"
+Requires-Dist: httpx>=0.27; extra == "webapp"
 Requires-Dist: uvicorn[standard]>=0.30; extra == "webapp"

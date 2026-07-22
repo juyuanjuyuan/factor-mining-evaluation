@@ -234,6 +234,8 @@ def main() -> None:
             signal_end=days[22].date().isoformat(),
         )
         split_metrics = split_result["metrics"]
+        assert split_metrics["signal_start"] == days[5].date().isoformat()
+        assert split_metrics["signal_end"] == days[22].date().isoformat()
         assert split_metrics["sample_start_day"] == days[5].date().isoformat()
         # H=1 requires open[t+2], so the final two signal dates are excluded.
         assert split_metrics["sample_end_day"] == days[20].date().isoformat()

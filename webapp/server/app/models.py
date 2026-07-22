@@ -67,6 +67,8 @@ class JobCreate(BaseModel):
     horizon: int = Field(default=1, ge=1)
     n_quantiles: int = Field(default=10, ge=2)
     significance_level: float = Field(default=0.05, gt=0, lt=1)
+    signal_start: str | None = None
+    signal_end: str | None = None
     gate: GateSpec | None = None
 
     @field_validator("tags")
@@ -74,12 +76,30 @@ class JobCreate(BaseModel):
     def validate_tags(cls, values: list[str]) -> list[str]:
         return normalize_tags(values)
 
+    @field_validator("signal_start", "signal_end")
+    @classmethod
+    def evaluation_iso_date(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            return date.fromisoformat(value).isoformat()
+        except (TypeError, ValueError) as exc:
+            raise ValueError("评价日期必须是 YYYY-MM-DD") from exc
+
     @model_validator(mode="after")
     def factor_or_tag_source(self) -> "JobCreate":
         if self.factors and self.tags:
             raise ValueError("请使用因子列表或标签之一提交任务，不能同时使用")
         if not self.factors and not self.tags:
             raise ValueError("请至少选择一个因子或标签")
+        if (self.signal_start is None) != (self.signal_end is None):
+            raise ValueError("评价期间必须同时提供开始日和结束日")
+        if (
+            self.signal_start is not None
+            and self.signal_end is not None
+            and date.fromisoformat(self.signal_start) > date.fromisoformat(self.signal_end)
+        ):
+            raise ValueError("评价期间开始日不能晚于结束日")
         return self
 
 
@@ -141,11 +161,16 @@ class GeneticCampaignCreate(BaseModel):
     test_end: str
     horizon: int = Field(default=1, ge=1, le=60)
     n_quantiles: int = Field(default=10, ge=3, le=20)
-    preprocess_mode: Literal["paper_local", "market_cap", "none"] = "paper_local"
+    preprocess_mode: Literal[
+        "paper_local",
+        "market_cap_industry",
+        "market_cap",
+        "none",
+    ] = "paper_local"
     population_size: int = Field(default=1000, ge=2, le=10000)
     generations: int = Field(default=3, ge=1, le=100)
     hall_of_fame: int = Field(default=100, ge=1, le=5000)
-    components: int = Field(default=10, ge=1, le=500)
+    components: int = Field(default=100, ge=1, le=500)
     tournament_size: int = Field(default=20, ge=1, le=1000)
     n_jobs: int = Field(default=2, ge=1, le=32)
     compute_backend: Literal["cpu", "mps"] = "cpu"

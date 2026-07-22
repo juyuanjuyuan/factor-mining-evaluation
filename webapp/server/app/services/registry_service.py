@@ -337,6 +337,36 @@ class RegistryService:
             self.db.delete_factor_tags(batch_id, factor_name)
             return True
 
+    def remove_from_library(self, batch_id: str, factor_name: str) -> bool:
+        """Remove a submitted copy while preserving its source test factor.
+
+        Formal-library admission copies a definition instead of moving it.  A
+        withdrawal therefore only removes the submitted definition and its
+        formal-library tags; test-library metadata and evaluation history stay
+        intact.
+        """
+        with self._write_lock:
+            if batch_id != self.settings.submitted_batch_id:
+                return False
+            payload = self._load_submitted()
+            removed = next(
+                (
+                    row
+                    for row in payload["factors"]
+                    if row["factor_name"] == factor_name
+                ),
+                None,
+            )
+            if removed is None:
+                return False
+            payload["factors"] = [
+                row for row in payload["factors"] if row["factor_name"] != factor_name
+            ]
+            self._write_batch(payload, self.settings.submitted_registry_path)
+            self.db.delete_factor_tags(batch_id, factor_name)
+            self.correlation.invalidate_removed_factor(removed)
+            return True
+
     def submit(self, batch_id: str, factor_name: str) -> dict[str, Any] | None:
         with self._write_lock:
             factor = self.find(batch_id, factor_name)

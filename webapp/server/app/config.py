@@ -75,6 +75,9 @@ class Settings:
 
 settings = Settings(
     data_dir=Path(os.getenv("FACTOR_WEBAPP_DATA_DIR", PROJECT_ROOT / "data")).resolve(),
+    registry_dir=Path(
+        os.getenv("FACTOR_WEBAPP_REGISTRY_DIR", PROJECT_ROOT / "factor_registry")
+    ).resolve(),
     state_dir=Path(
         os.getenv("FACTOR_WEBAPP_STATE_DIR", PROJECT_ROOT / "outputs" / "webapp")
     ).resolve(),
