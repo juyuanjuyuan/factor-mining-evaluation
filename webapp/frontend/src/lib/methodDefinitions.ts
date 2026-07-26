@@ -117,17 +117,37 @@ r_{G_g,t} &= \frac{1}{|G_g|}\sum_{i\in G_g}R_{i,t}^{(H)}
   quantile_net_returns: {
     label: '分组净收益',
     category: '组合回测',
-    description: '按分位组重新生成等权持仓路径，按单边万分之 7 的统一成本假设扣除交易成本。',
+    description: '按分位组重新生成等权持仓路径，按买入万分之 12.5、卖出万分之 17.5 的非对称成本假设扣除交易成本。',
     formula: String.raw`\begin{aligned}
 w_{i,g,t} &= \frac{\mathbf{1}(i\in G_{g,t})}{|G_{g,t}|} \\
 B_{g,t} &= \sum_i \max(w_{i,g,t}-w_{i,g,t-1},0) \\
 S_{g,t} &= \sum_i \max(w_{i,g,t-1}-w_{i,g,t},0) \\
-c_{\mathrm{buy}} &= c_{\mathrm{sell}} = 0.0007 \\
+c_{\mathrm{buy}} &= 0.00125,\qquad c_{\mathrm{sell}} = 0.00175 \\
 r^{\mathrm{net}}_{G_g,t} &= r_{G_g,t}-B_{g,t}c_{\mathrm{buy}}-S_{g,t}c_{\mathrm{sell}}
 \end{aligned}`,
     definition:
-      '每个交易日使用与 quantile_returns 相同的因子排序和分组规则生成 G1 到 GN 等权目标权重；由相邻目标权重差计算买入换手、卖出换手和单边换手，并从当日分位组毛收益中扣除交易成本。买入和卖出均按单边万分之 7（0.0007）扣费；一单位完整买卖的成本为千分之 1.4（0.0014）。输出净收益到标准 group_returns 明细，另输出 quantile_turnover 与 quantile_transaction_cost 诊断明细。',
-    interpretation: '净收益可直接交给 quantile_cumulative、quantile_plot 和滚动风险方法；该规则是统一单边成本假设，不按佣金、税费等项目拆分，也不随成交规模或价格变化。',
+      '每个交易日使用与 quantile_returns 相同的因子排序和分组规则生成 G1 到 GN 等权目标权重；由相邻目标权重差计算买入换手、卖出换手和单边换手，并从当日分位组毛收益中扣除交易成本。买入按单边万分之 12.5（0.00125）扣费，卖出按单边万分之 17.5（0.00175）扣费；一单位完整买卖的成本为千分之 3（0.003）。输出净收益到标准 group_returns 明细，另输出 quantile_turnover 与 quantile_transaction_cost 诊断明细。',
+    interpretation: '净收益可直接交给 quantile_cumulative、quantile_plot 和滚动风险方法；卖出成本高于买入，用固定费率反映卖出端税费与统一执行缓冲。该规则不按佣金、税费等项目拆分，也不随成交规模或价格变化。',
+  },
+  fitness: {
+    label: '年度 Fitness',
+    category: '组合诊断',
+    description: '按自然年汇总最高分位组的净收益、年化 Sharpe、单边换手和年度最大回撤，并计算含回撤惩罚的 Fitness。',
+    formula: String.raw`\begin{aligned}
+R_y &= \left(\prod_{t\in y}(1+r^{\mathrm{net}}_{G_N,t})\right)^{252/T_y}-1 \\
+S_y &= \frac{\operatorname{mean}_{t\in y}(r^{\mathrm{net}}_{G_N,t})}{\operatorname{std}_{t\in y}(r^{\mathrm{net}}_{G_N,t})}\sqrt{252} \\
+\tau_y &= \operatorname{mean}_{t\in y}(\tau^{\mathrm{one\!\!\!\!-way}}_{G_N,t}) \\
+W_{y,k} &= \prod_{\substack{t\in y\\t\le k}}(1+r^{\mathrm{net}}_{G_N,t}) \\
+D_y &= \max_{k\in y}\left(1-\frac{W_{y,k}}{\max\left(1,\max_{u\le k}W_{y,u}\right)}\right) \\
+\lambda_y &= \frac{1}{(1-|D_y|)^2},\qquad \varepsilon=0.125 \\
+A_y &= \frac{|R_y|}{\max(\tau_y,\varepsilon)} \\
+F_y &= S_y\sqrt{A_y}-\lambda_yD_y \\
+F &= \frac{1}{|\mathcal Y_{\mathrm{finite}}|}\sum_{y\in\mathcal Y_{\mathrm{finite}}}F_y
+\end{aligned}`,
+    definition:
+      '依赖 quantile_net_returns，因此固定读取最新的最高分位组 GN 净日收益和 GN 单边换手。按因子信号日期的自然年分组；每年用该年全部有限净收益计算复利累计收益和按 252 个交易日几何年化的净收益，年化 Sharpe 使用样本标准差（ddof=1），换手为该年日单边换手均值。年度最大回撤 D_y 由同一年内、以 1 为起始净值的 GN 净值路径计算，并以正的回撤幅度输出；epsilon 固定为 0.125，lambda_y = 1/(1-|D_y|)^2。先计算收益换手根号项 A_y，再从 Sharpe 乘以 sqrt(A_y) 的结果中扣除 lambda_y * D_y；D_y 达到 100% 时 lambda_y 不可定义。首尾不足完整自然年的样本同样按该年有效交易日数年化。总指标是所有有限年度 Fitness 的等权平均，不按交易日数量加权。',
+    interpretation:
+      '该指标把收益、风险调整后收益、交易频率和年度路径回撤放入同一评分；换手低于 12.5% 时分母固定为 12.5%，回撤则通过随 D_y 加速的 lambda_y 在根号外直接扣分。收益取绝对值但 Sharpe 保留符号，因此负 Sharpe 的策略仍得到负 Fitness。收益已按当前固定显性成本假设扣除，但该指标本身不含冲击成本、容量和融资约束。',
   },
   quantile_cumulative: {
     label: '分组累计收益',

@@ -16,7 +16,9 @@ from evaluators import (
     DEFAULT_EVALUATION_METHODS,
     EvaluationContext,
     EvaluationState,
+    calculate_yearly_fitness,
     compare_ic_trend_filters,
+    evaluate_fitness,
     evaluate_ic_horizon_decay,
     evaluate_market_cap_neutralization,
     evaluate_ic_peak_decay,
@@ -760,6 +762,138 @@ def test_top_quantiles_and_rolling_evaluators() -> None:
     assert np.isclose(second_state.metrics["best_lower_group_mean_return"], 0.004)
 
 
+def test_yearly_fitness_uses_annualized_partial_years_turnover_and_drawdown_penalty() -> None:
+    days = pd.DatetimeIndex(
+        [
+            "2022-12-29",
+            "2022-12-30",
+            "2023-01-03",
+            "2023-01-04",
+            "2023-01-05",
+        ]
+    )
+    group_returns = pd.DataFrame(
+        {
+            "G1": 0.0,
+            "G2": 0.0,
+            "G3": [0.0008, -0.0002, 0.0005, 0.0011, -0.0004],
+        },
+        index=days,
+    )
+    turnover = pd.DataFrame(
+        {
+            "G3_one_way_turnover": [0.05, 0.05, 0.20, 0.25, 0.30],
+        },
+        index=days,
+    )
+    detail, metrics = calculate_yearly_fitness(
+        group_returns,
+        turnover,
+        n_quantiles=3,
+    )
+    assert detail.index.tolist() == [2022, 2023]
+    assert detail["trading_days"].tolist() == [2.0, 3.0]
+
+    first_year_returns = group_returns.loc["2022", "G3"]
+    first_year_cumulative = float((1 + first_year_returns).prod() - 1)
+    first_year_annualized = float(
+        (1 + first_year_cumulative) ** (252 / len(first_year_returns)) - 1
+    )
+    first_year_sharpe = float(
+        first_year_returns.mean() / first_year_returns.std(ddof=1) * np.sqrt(252)
+    )
+    first_year_net_value = (1 + first_year_returns).cumprod()
+    first_year_drawdown = float(
+        (1 - first_year_net_value / first_year_net_value.cummax().clip(lower=1.0)).max()
+    )
+    first_year_turnover = float(turnover.loc["2022", "G3_one_way_turnover"].mean())
+    first_year_lambda = float(1 / (1 - abs(first_year_drawdown)) ** 2)
+    first_year_radicand = float(abs(first_year_annualized) / max(first_year_turnover, 0.125))
+    first_year_fitness = float(
+        first_year_sharpe * np.sqrt(first_year_radicand)
+        - first_year_lambda * first_year_drawdown
+    )
+    assert np.isclose(detail.loc[2022, "cumulative_net_return"], first_year_cumulative)
+    assert np.isclose(detail.loc[2022, "annualized_net_return"], first_year_annualized)
+    assert np.isclose(detail.loc[2022, "annualized_sharpe"], first_year_sharpe)
+    assert np.isclose(detail.loc[2022, "mean_daily_one_way_turnover"], first_year_turnover)
+    assert np.isclose(detail.loc[2022, "annual_max_drawdown"], first_year_drawdown)
+    assert np.isclose(detail.loc[2022, "drawdown_penalty_lambda"], first_year_lambda)
+    assert np.isclose(detail.loc[2022, "fitness_radicand"], first_year_radicand)
+    assert np.isclose(detail.loc[2022, "fitness"], first_year_fitness)
+
+    second_year_returns = group_returns.loc["2023", "G3"]
+    second_year_cumulative = float((1 + second_year_returns).prod() - 1)
+    second_year_annualized = float(
+        (1 + second_year_cumulative) ** (252 / len(second_year_returns)) - 1
+    )
+    second_year_sharpe = float(
+        second_year_returns.mean() / second_year_returns.std(ddof=1) * np.sqrt(252)
+    )
+    second_year_net_value = (1 + second_year_returns).cumprod()
+    second_year_drawdown = float(
+        (1 - second_year_net_value / second_year_net_value.cummax().clip(lower=1.0)).max()
+    )
+    second_year_turnover = float(turnover.loc["2023", "G3_one_way_turnover"].mean())
+    second_year_lambda = float(1 / (1 - abs(second_year_drawdown)) ** 2)
+    second_year_radicand = float(abs(second_year_annualized) / max(second_year_turnover, 0.125))
+    second_year_fitness = float(
+        second_year_sharpe * np.sqrt(second_year_radicand)
+        - second_year_lambda * second_year_drawdown
+    )
+    assert np.isclose(detail.loc[2023, "annualized_net_return"], second_year_annualized)
+    assert np.isclose(detail.loc[2023, "annualized_sharpe"], second_year_sharpe)
+    assert np.isclose(detail.loc[2023, "mean_daily_one_way_turnover"], second_year_turnover)
+    assert np.isclose(detail.loc[2023, "annual_max_drawdown"], second_year_drawdown)
+    assert np.isclose(detail.loc[2023, "drawdown_penalty_lambda"], second_year_lambda)
+    assert np.isclose(detail.loc[2023, "fitness_radicand"], second_year_radicand)
+    assert np.isclose(detail.loc[2023, "fitness"], second_year_fitness)
+    assert np.isclose(metrics["fitness"], (first_year_fitness + second_year_fitness) / 2)
+    assert metrics["fitness_year_count"] == 2
+    assert metrics["fitness_valid_year_count"] == 2
+
+    context = EvaluationContext(
+        factor_name="yearly_fitness",
+        artifact_name="yearly_fitness",
+        factor=group_returns,
+        close=group_returns,
+        forward_return=group_returns,
+        horizon=1,
+        n_quantiles=3,
+        output_dir=Path("."),
+    )
+    state = EvaluationState(context)
+    state.add_detail("group_returns", group_returns)
+    state.add_detail("quantile_turnover", turnover)
+    evaluate_fitness(state)
+    assert state.details["yearly_fitness"].equals(detail)
+    assert state.metrics == metrics
+    assert evaluation_method_names(resolve_evaluation_methods("fitness")) == (
+        "quantile_net_returns",
+        "fitness",
+    )
+
+    underwater_returns = pd.DataFrame(
+        {"G3": [-0.2, 0.25]},
+        index=pd.date_range("2024-01-02", periods=2, freq="B"),
+    )
+    underwater_turnover = pd.DataFrame(
+        {"G3_one_way_turnover": [0.1, 0.1]},
+        index=underwater_returns.index,
+    )
+    underwater_detail, underwater_metrics = calculate_yearly_fitness(
+        underwater_returns,
+        underwater_turnover,
+        n_quantiles=3,
+    )
+    underwater_drawdown = 0.2
+    underwater_lambda = 1 / (1 - underwater_drawdown) ** 2
+    assert np.isclose(underwater_detail.loc[2024, "fitness_radicand"], 0.0)
+    assert np.isclose(underwater_detail.loc[2024, "fitness"], -underwater_lambda * underwater_drawdown)
+    assert np.isclose(underwater_metrics["fitness"], -underwater_lambda * underwater_drawdown)
+    assert underwater_metrics["fitness_valid_year_count"] == 1
+
+
 def test_tradability_filter() -> None:
     rng = np.random.default_rng(66)
     days = pd.date_range("2024-01-02", periods=30, freq="B")
@@ -983,6 +1117,32 @@ def test_engine_integration() -> None:
             "metrics"
         ]["evaluation_artifacts"]
 
+        fitness_result = evaluate_factor_expression(
+            factor_name="fitness_pipeline",
+            expression="rank_cs(c)",
+            data_dir=root,
+            output_dir=root / "fitness",
+            evaluation_methods=resolve_evaluation_methods("fitness"),
+        )
+        assert fitness_result["evaluation_methods"] == [
+            "quantile_net_returns",
+            "fitness",
+        ]
+        fitness_path = Path(fitness_result["detail_paths"]["yearly_fitness"])
+        assert fitness_path.is_file()
+        yearly = pd.read_csv(fitness_path, encoding="utf-8-sig", index_col=0)
+        assert {
+            "trading_days",
+            "annualized_net_return",
+            "annualized_sharpe",
+            "mean_daily_one_way_turnover",
+            "annual_max_drawdown",
+            "drawdown_penalty_lambda",
+            "fitness_radicand",
+            "fitness",
+        } <= set(yearly)
+        assert "fitness" in fitness_result["metrics"]
+
 
 def main() -> None:
     assert evaluation_method_names(DEFAULT_EVALUATION_METHODS) == (
@@ -1001,6 +1161,7 @@ def main() -> None:
     test_ic_trend_filter()
     test_market_cap_neutralization()
     test_top_quantiles_and_rolling_evaluators()
+    test_yearly_fitness_uses_annualized_partial_years_turnover_and_drawdown_penalty()
     test_tradability_filter()
     test_engine_integration()
     print("extended evaluation modules passed")

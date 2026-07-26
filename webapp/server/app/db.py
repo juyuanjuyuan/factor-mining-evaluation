@@ -10,6 +10,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Mapping
 
+from evaluation_standards import PROFITABILITY_METHOD_NAMES
+
 from .sanitize import sanitize
 
 
@@ -106,6 +108,12 @@ BUILTIN_TEMPLATES = (
             "quantile_cumulative",
             "quantile_plot",
         ],
+        {},
+    ),
+    (
+        "盈利能力测试",
+        "methods",
+        list(PROFITABILITY_METHOD_NAMES),
         {},
     ),
     (

@@ -79,6 +79,8 @@ def main() -> None:
         "quantile_returns",
         "quantile_cumulative",
         "quantile_plot",
+        "quantile_net_returns",
+        "fitness",
         "top_quantile_performance",
         "rolling_sharpe",
         "rolling_drawdown",

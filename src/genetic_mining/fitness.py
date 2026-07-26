@@ -13,7 +13,7 @@ from evaluators.tradability import mask_untradeable_entries
 from returns import RETURN_DEFINITION, calculate_forward_open_return
 from transforms import neutralize_factor_by_industry_and_market_cap
 
-from .tree import ExpressionTree
+from .tree import ExpressionTree, canonicalize_tree
 
 
 PAPER_LOCAL_STYLE_NAMES = (
@@ -47,6 +47,14 @@ class FitnessContext:
 
 @dataclass(frozen=True)
 class FitnessResult:
+    """Training fitness plus the expression direction frozen from that training data.
+
+    ``expression`` is the unmodified GP-tree expression and remains the cache key.
+    ``frozen_expression`` is the actual expression sent to the independent test
+    stages.  Keeping them separate prevents a direction normalization from
+    invalidating the resumable tree-level fitness cache.
+    """
+
     expression: str
     raw_fitness: float | None
     adjusted_fitness: float | None
@@ -58,6 +66,10 @@ class FitnessResult:
     node_count: int
     depth: int
     error: str = ""
+    frozen_expression: str = ""
+    direction_multiplier: int = 1
+    aligned_ic_mean: float | None = None
+    frozen_node_count: int | None = None
 
     @property
     def selection_score(self) -> float:
@@ -69,11 +81,96 @@ class FitnessResult:
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> "FitnessResult":
-        return cls(**dict(payload))
+        normalized = dict(payload)
+        expression = str(normalized["expression"])
+        ic_mean = normalized.get("ic_mean")
+        try:
+            finite_ic_mean = float(ic_mean)
+        except (TypeError, ValueError):
+            finite_ic_mean = np.nan
+        normalized.setdefault("frozen_expression", expression)
+        normalized.setdefault("direction_multiplier", 1)
+        normalized.setdefault(
+            "aligned_ic_mean",
+            abs(finite_ic_mean) if np.isfinite(finite_ic_mean) else None,
+        )
+        normalized.setdefault("frozen_node_count", normalized.get("node_count"))
+        return cls(**normalized)
 
 
 def _finite_or_none(value: float) -> float | None:
     return float(value) if np.isfinite(value) else None
+
+
+def apply_direction_multiplier(
+    tree: ExpressionTree,
+    direction_multiplier: int,
+) -> ExpressionTree:
+    """Return the canonical GP tree after applying a frozen sign direction."""
+
+    if direction_multiplier == 1:
+        return canonicalize_tree(tree)
+    if direction_multiplier == -1:
+        if tree.kind == "function" and tree.value == "neg":
+            return canonicalize_tree(tree.children[0])
+        return canonicalize_tree(ExpressionTree("function", "neg", (tree,)))
+    raise ValueError("direction_multiplier must be either -1 or 1")
+
+
+def freeze_expression_direction(
+    tree: ExpressionTree,
+    ic_mean: float,
+) -> tuple[str, int, int]:
+    """Orient a GP expression from its training-only signed Rank IC.
+
+    The returned expression is also the canonical parent tree for this
+    generation's selection and genetic operators.  A leading GP ``neg`` is
+    simplified when applying a second negative sign, so the persisted factor is
+    the shortest equivalent expression.
+    """
+
+    if not np.isfinite(ic_mean):
+        raise ValueError("cannot freeze an expression direction from a non-finite IC")
+    direction_multiplier = -1 if ic_mean < 0 else 1
+    oriented_tree = apply_direction_multiplier(tree, direction_multiplier)
+    return oriented_tree.to_expression(), direction_multiplier, oriented_tree.node_count
+
+
+def build_fitness_result(
+    tree: ExpressionTree,
+    *,
+    ic_mean: float,
+    ic_std: float,
+    ic_count: int,
+    pair_count: int,
+    parsimony_coefficient: float,
+) -> FitnessResult:
+    """Build signed diagnostics and an aligned selection score from training data."""
+
+    frozen_expression, direction_multiplier, frozen_node_count = (
+        freeze_expression_direction(tree, ic_mean)
+    )
+    aligned_ic_mean = abs(float(ic_mean))
+    ir = ic_mean / ic_std if np.isfinite(ic_std) and ic_std > 0 else np.nan
+    adjusted = aligned_ic_mean - float(parsimony_coefficient) * frozen_node_count
+    return FitnessResult(
+        expression=tree.to_expression(),
+        # Retain the signed legacy field for diagnostics.  Direction-normalized
+        # selection is represented explicitly by aligned_ic_mean/adjusted_fitness.
+        raw_fitness=_finite_or_none(ic_mean),
+        adjusted_fitness=_finite_or_none(adjusted),
+        ic_mean=_finite_or_none(ic_mean),
+        ic_std=_finite_or_none(ic_std),
+        ir=_finite_or_none(ir),
+        ic_count=int(ic_count),
+        pair_count=int(pair_count),
+        node_count=tree.node_count,
+        depth=tree.depth,
+        frozen_expression=frozen_expression,
+        direction_multiplier=direction_multiplier,
+        aligned_ic_mean=_finite_or_none(aligned_ic_mean),
+        frozen_node_count=frozen_node_count,
+    )
 
 
 def prepare_fitness_context(
@@ -300,19 +397,13 @@ def evaluate_program_fitness(
             )
         ic_mean = float(ic.mean())
         ic_std = float(ic.std(ddof=1))
-        ir = ic_mean / ic_std if np.isfinite(ic_std) and ic_std > 0 else np.nan
-        adjusted = ic_mean - float(parsimony_coefficient) * tree.node_count
-        return FitnessResult(
-            expression=expression,
-            raw_fitness=_finite_or_none(ic_mean),
-            adjusted_fitness=_finite_or_none(adjusted),
-            ic_mean=_finite_or_none(ic_mean),
-            ic_std=_finite_or_none(ic_std),
-            ir=_finite_or_none(ir),
-            ic_count=int(len(ic)),
+        return build_fitness_result(
+            tree,
+            ic_mean=ic_mean,
+            ic_std=ic_std,
+            ic_count=len(ic),
             pair_count=pair_count,
-            node_count=tree.node_count,
-            depth=tree.depth,
+            parsimony_coefficient=parsimony_coefficient,
         )
     except Exception as exc:
         return FitnessResult(
@@ -339,6 +430,9 @@ def fitness_contract(context: FitnessContext) -> dict[str, Any]:
         "preprocess_mode": context.preprocess_mode,
         "style_exposures": list(context.style_exposures),
         "minimum_ic_days": context.minimum_ic_days,
+        "training_ic_direction_normalization": (
+            "signed_rank_ic_to_positive_generation_genotype"
+        ),
         **context.sample_metadata,
     }
     if context.preprocess_mode == MARKET_CAP_INDUSTRY_MODE:

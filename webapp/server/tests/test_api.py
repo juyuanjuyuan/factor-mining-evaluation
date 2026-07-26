@@ -370,7 +370,11 @@ def main() -> None:
                 "/api/test-factors/webapp_test_factors/api_duplicate_correlation_factor/submit"
             )
             assert rejected.status_code == 422
-            assert "不超过 0.75" in rejected.json()["detail"]
+            # The compact catalog fixture deliberately omits the evaluator-only
+            # inputs required by the automatic profitability comparison. A
+            # high-correlation candidate must therefore leave the formal
+            # library untouched instead of being blindly rejected/admitted.
+            assert "自动运行" in rejected.json()["detail"]
             assert client.get("/api/factor-correlation").json()["factor_names"] == [
                 "api_correlation_factor",
                 "api_volume_correlation_factor",
@@ -423,6 +427,10 @@ def main() -> None:
                 "quantile_net_returns",
                 "quantile_cumulative",
             ]
+            fitness_resolved = client.post(
+                "/api/methods/resolve", json={"names": ["fitness"]}
+            ).json()
+            assert fitness_resolved["methods"] == ["quantile_net_returns", "fitness"]
             methods = client.get("/api/methods").json()
             net_method = next(
                 method
@@ -430,6 +438,11 @@ def main() -> None:
                 if method["name"] == "quantile_net_returns"
             )
             assert "quantile_returns" in net_method["provides"]
+            fitness_method = next(
+                method for method in methods if method["name"] == "fitness"
+            )
+            assert fitness_method["requires"] == ["quantile_net_returns"]
+            assert not fitness_method["is_default"]
             cycle_method = next(
                 method for method in methods if method["name"] == "cycle_context"
             )
@@ -529,6 +542,13 @@ def main() -> None:
                 for template in template_rows
                 if template["kind"] == "methods"
             )
+            profitability_template = next(
+                template
+                for template in template_rows
+                if template["name"] == "盈利能力测试"
+            )
+            assert "rolling_sharpe" in profitability_template["methods"]
+            assert "fitness" in profitability_template["methods"]
             templated_evaluation = client.post(
                 "/api/jobs",
                 json={
@@ -717,7 +737,7 @@ def main() -> None:
         try:
             service.submit(duplicate["batch_id"], duplicate["factor_name"])
         except ValueError as exc:
-            assert "不超过 0.75" in str(exc)
+            assert "自动运行" in str(exc)
         else:
             raise AssertionError("a fully correlated submitted factor must be rejected")
         assert service.correlation_matrix()["factor_names"] == ["web_test_factor"]
@@ -752,8 +772,8 @@ def main() -> None:
                 "project": "遗传规划",
             }
         )
-        assert gp_rejected["status"] == "rejected_correlation"
-        assert gp_rejected["correlation_passed"] is False
+        assert gp_rejected["status"] == "failed"
+        assert "自动运行" in gp_rejected["explanation"]
         assert gp_service.find("webapp_test_factors", "gp_handoff_duplicate")
         assert not gp_service.find("webapp_factor_library", "gp_handoff_duplicate")
 

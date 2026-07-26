@@ -10,10 +10,10 @@ import pandas as pd
 from .base import EvaluationState, evaluation_method
 
 
-# Use the advisor-approved minimum cost assumption: 7 bps for each side.
-# A complete buy and sell of one unit of portfolio value therefore costs 14 bps.
-DEFAULT_BUY_COST_RATE = 0.0007
-DEFAULT_SELL_COST_RATE = 0.0007
+# Default to the strict A-share GP testing assumption: 12.5 bps to buy and
+# 17.5 bps to sell.  A complete one-unit rebalance therefore costs 30 bps.
+DEFAULT_BUY_COST_RATE = 0.00125
+DEFAULT_SELL_COST_RATE = 0.00175
 
 
 def default_buy_cost_rate() -> float:

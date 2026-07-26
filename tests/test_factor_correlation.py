@@ -15,6 +15,7 @@ from _bootstrap import PROJECT_ROOT  # noqa: F401 - imports src onto sys.path
 
 from engine import evaluate_expression
 from factor_correlation import (
+    FactorDefinition,
     FactorCorrelationService,
     FactorCorrelationThresholdError,
     non_overlapping_pair_correlations,
@@ -66,8 +67,74 @@ def test_non_overlapping_pair_correlations() -> None:
     assert windows[-1]["end_day"] == str(days[119].date())
 
 
+def test_non_overlapping_pair_correlations_avoid_overflow() -> None:
+    """Huge but finite factor exposures retain their actual correlation."""
+
+    days = pd.date_range("2024-01-02", periods=60, freq="B")
+    columns = ["000001", "000002", "000003"]
+    base = np.arange(1, len(days) * len(columns) + 1, dtype=float).reshape(
+        len(days), len(columns)
+    )
+    left = pd.DataFrame(base * 1e200, index=days, columns=columns)
+    right = pd.DataFrame(base, index=days, columns=columns)
+
+    windows = non_overlapping_pair_correlations(left, right)
+
+    assert len(windows) == 1
+    assert np.isclose(windows[0]["correlation"], 1.0)
+    assert windows[0]["exceeds_threshold"]
+
+
+def test_non_overlapping_pair_correlations_reject_huge_constant() -> None:
+    """An overflowing raw standard deviation must not masquerade as rho=0."""
+
+    days = pd.date_range("2024-01-02", periods=60, freq="B")
+    columns = ["000001", "000002", "000003"]
+    left = pd.DataFrame(1e200, index=days, columns=columns)
+    right = pd.DataFrame(
+        np.arange(len(days) * len(columns), dtype=float).reshape(len(days), len(columns)),
+        index=days,
+        columns=columns,
+    )
+
+    windows = non_overlapping_pair_correlations(left, right)
+
+    assert len(windows) == 1
+    assert windows[0]["correlation"] is None
+    assert not windows[0]["exceeds_threshold"]
+
+
+def test_service_matrix_pair_correlation_avoids_overflow() -> None:
+    """The submitted-library matrix path uses the same stable calculation."""
+
+    days = pd.date_range("2024-01-02", periods=60, freq="B")
+    columns = ["000001", "000002", "000003"]
+    base = np.arange(1, len(days) * len(columns) + 1, dtype=float).reshape(
+        len(days), len(columns)
+    )
+    left = pd.DataFrame(base * 1e200, index=days, columns=columns)
+    right = pd.DataFrame(-base, index=days, columns=columns)
+    service = FactorCorrelationService(
+        SimpleNamespace(data_dir=Path("."), state_dir=Path("."))
+    )
+    definition = FactorDefinition("left", "c", "left-hash")
+    other_definition = FactorDefinition("right", "c", "right-hash")
+
+    correlation = service._pair_correlation(
+        definition,
+        left,
+        other_definition,
+        right,
+    )
+
+    assert np.isclose(correlation, -1.0)
+
+
 def main() -> None:
     test_non_overlapping_pair_correlations()
+    test_non_overlapping_pair_correlations_avoid_overflow()
+    test_non_overlapping_pair_correlations_reject_huge_constant()
+    test_service_matrix_pair_correlation_avoids_overflow()
     with TemporaryDirectory() as temporary:
         root = Path(temporary)
         data_dir = root / "data"

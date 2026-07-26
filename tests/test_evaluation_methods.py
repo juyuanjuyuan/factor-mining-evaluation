@@ -49,10 +49,10 @@ def assert_default_quantile_net_costs() -> None:
     } & metrics.keys()
     assert np.isclose(turnover.iloc[0]["G1_buy_turnover"], 1.0)
     assert np.isclose(turnover.iloc[0]["G1_sell_turnover"], 0.0)
-    assert np.isclose(costs.iloc[0]["G1"], 0.0007)
+    assert np.isclose(costs.iloc[0]["G1"], 0.00125)
     assert np.isclose(turnover.iloc[1]["G1_buy_turnover"], 1.0)
     assert np.isclose(turnover.iloc[1]["G1_sell_turnover"], 1.0)
-    assert np.isclose(costs.iloc[1]["G1"], 0.0014)
+    assert np.isclose(costs.iloc[1]["G1"], 0.003)
 
 
 def main() -> None:

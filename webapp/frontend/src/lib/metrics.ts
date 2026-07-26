@@ -23,6 +23,7 @@ export const METRIC_GROUPS = [
   '显著性检验',
   '分位组收益',
   '头部组合',
+  'Fitness',
   '滚动风险',
   '数据质量',
   '运行信息',
@@ -99,6 +100,10 @@ export const METRIC_SPECS: Record<string, MetricSpec> = {
   gn_mean_daily_one_way_turnover: spec('最高组日均单边换手', '分位组收益', 'percent', 'lower'),
   gn_mean_daily_transaction_cost: spec('最高组日均交易成本', '分位组收益', 'percent', 'lower'),
   gn_mean_daily_net_return: spec('最高组日均净收益', '分位组收益', 'percent', 'higher'),
+
+  fitness: spec('平均年度 Fitness', 'Fitness', 'number', 'higher', '各自然年有限 Fitness 的等权平均；年度明细使用最高组净收益、单边换手与年度最大回撤'),
+  fitness_year_count: spec('Fitness 自然年数', 'Fitness', 'int'),
+  fitness_valid_year_count: spec('有效 Fitness 年数', 'Fitness', 'int', 'none', '具有至少两个有效日、非零日收益标准差且最大回撤小于 100% 的年份数'),
 
   top_group_mean_return: spec('最高组日均收益', '头部组合', 'percent', 'higher', '最高分位组 GN 的日收益均值'),
   top_group_final_cumulative: spec('最高组累计收益', '头部组合', 'percent', 'higher', '最高分位组 GN 的全样本复利累计收益'),
@@ -188,6 +193,7 @@ export const KEY_METRICS = [
   'ic_trend_filter_final',
   'nw_ic_p_value',
   'gn_final_cumulative',
+  'fitness',
 ]
 
 const ROLLING_PATTERN = /^(gn)_rolling_(sharpe|drawdown)_(\d+)_(pos_share|min|median|worst)$/
@@ -288,6 +294,7 @@ export const DETAIL_TITLES: Record<string, string> = {
   ic_trend_filter_mean_10: '滤波后 IC Mean（10 日窗口 / 5 日重叠）',
   quantile_transaction_cost: '分位组交易成本',
   quantile_turnover: '分位组换手率',
+  yearly_fitness: '自然年 Fitness',
   newey_west_ic_autocovariances: 'IC 自协方差 (Newey-West)',
   top_quantile_performance: '最高组表现',
   top_quantile_leadership_60: '最高组 60 日窗口排名',
@@ -325,6 +332,15 @@ const DETAIL_COLUMN_TITLES: Record<string, string> = {
   best_group_cumulative: '最佳其余组窗口累计收益',
   top_group_excess_vs_best_group: '最高组相对最佳其余组超额',
   top_group_is_best: '最高组窗口第一',
+  trading_days: '有效交易日数',
+  cumulative_net_return: '年度累计净收益',
+  annualized_net_return: '年度年化净收益',
+  annualized_sharpe: '年度年化 Sharpe',
+  mean_daily_one_way_turnover: '日均单边换手',
+  annual_max_drawdown: '年度最大回撤',
+  drawdown_penalty_lambda: '回撤惩罚 λ',
+  fitness_radicand: '收益换手根号项',
+  fitness: '年度 Fitness',
 }
 
 /** 详情图表展示顺序：旗舰图在前。 */
@@ -338,6 +354,7 @@ const DETAIL_ORDER = [
   'group_returns',
   'quantile_turnover',
   'quantile_transaction_cost',
+  'yearly_fitness',
   'top_quantile_performance',
   'top_quantile_leadership_60',
   'top_quantile_missed_windows_60',

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -16,19 +17,36 @@ from engine import DEFAULT_FILES, parse_and_validate_expression
 from genetic_mining.evolution import (
     EvolutionConfig,
     ScoredTree,
+    _unique_parent_pool,
+    active_limits,
+    dominates,
     evaluate_population,
     evolve_population,
     initial_population,
+    pareto_front,
     select_top_components,
+    tournament_select,
+    update_hall_of_fame,
 )
 from genetic_mining.admission import admit_factor_to_library
 from genetic_mining.fitness import (
     FitnessResult,
+    evaluate_processed_expression,
     evaluate_program_fitness,
     prepare_fitness_context,
 )
 from genetic_mining.runner import GeneticMiningRunner, MiningCampaignConfig
-from genetic_mining.tree import ExpressionTree
+from genetic_mining.tree import (
+    FUNCTION_BY_NAME,
+    FUNCTION_SPECS,
+    ExpressionTree,
+    canonicalize_tree,
+    delete_node,
+    insert_node,
+    mutate_constant,
+    mutate_window,
+    point_mutation,
+)
 
 
 def synthetic_market_data(periods: int = 190) -> dict[str, pd.DataFrame]:
@@ -121,7 +139,29 @@ def test_expression_trees_and_evolution() -> None:
     assert len({tree.to_expression() for tree in offspring}) == len(offspring)
 
 
-def test_hall_of_fame_selects_top_fitness_without_internal_correlation_gate() -> None:
+def _scored_tree(tree: ExpressionTree, aligned_ic: float) -> ScoredTree:
+    expression = tree.to_expression()
+    return ScoredTree(
+        tree=tree,
+        fitness=FitnessResult(
+            expression=expression,
+            raw_fitness=aligned_ic,
+            adjusted_fitness=aligned_ic - 0.0001 * tree.node_count,
+            ic_mean=aligned_ic,
+            ic_std=0.01,
+            ir=aligned_ic / 0.01,
+            ic_count=60,
+            pair_count=1200,
+            node_count=tree.node_count,
+            depth=tree.depth,
+            aligned_ic_mean=aligned_ic,
+            frozen_expression=expression,
+            frozen_node_count=tree.node_count,
+        ),
+    )
+
+
+def test_pareto_hall_of_fame_and_complexity_stratified_selection() -> None:
     config = EvolutionConfig(
         generations=1,
         population_size=4,
@@ -129,32 +169,142 @@ def test_hall_of_fame_selects_top_fitness_without_internal_correlation_gate() ->
         n_components=3,
         tournament_size=2,
     )
-    scores = {"c": 0.30, "o": 0.10, "h": 0.20, "l": None}
-    hall = {
-        expression: ScoredTree(
-            tree=ExpressionTree("terminal", expression),
-            fitness=FitnessResult(
-                expression=expression,
-                raw_fitness=score,
-                adjusted_fitness=score,
-                ic_mean=score,
-                ic_std=0.01 if score is not None else None,
-                ir=1.0 if score is not None else None,
-                ic_count=60 if score is not None else 0,
-                pair_count=1200 if score is not None else 0,
-                node_count=1,
-                depth=1,
-                error="" if score is not None else "invalid",
+    close = ExpressionTree("terminal", "c")
+    candidate_c = _scored_tree(close, 0.021)
+    candidate_a = _scored_tree(ExpressionTree("function", "abs", (close,)), 0.025)
+    candidate_d = _scored_tree(
+        ExpressionTree(
+            "function",
+            "log",
+            (ExpressionTree("function", "abs", (close,)),),
+        ),
+        0.023,
+    )
+    candidate_b = _scored_tree(
+        ExpressionTree(
+            "function",
+            "add",
+            (
+                ExpressionTree("function", "abs", (close,)),
+                ExpressionTree("terminal", "o"),
             ),
-        )
-        for expression, score in scores.items()
+        ),
+        0.027,
+    )
+    assert dominates(candidate_a, candidate_d)
+    assert not dominates(candidate_a, candidate_b)
+    front = pareto_front([candidate_a, candidate_b, candidate_c, candidate_d])
+    assert {item.tree.to_expression() for item in front} == {
+        candidate_a.tree.to_expression(),
+        candidate_b.tree.to_expression(),
+        candidate_c.tree.to_expression(),
     }
 
+    hall: dict[str, ScoredTree] = {}
+    update_hall_of_fame(
+        hall,
+        (candidate_a, candidate_b, candidate_c, candidate_d),
+        limit=config.hall_of_fame,
+    )
     selected, audit = select_top_components(hall, config)
 
-    assert [item.fitness.expression for item in selected] == ["c", "h", "o"]
+    assert [item.fitness.expression for item in selected] == [
+        candidate_b.fitness.expression,
+        candidate_a.fitness.expression,
+        candidate_c.fitness.expression,
+    ]
     assert [item["rank"] for item in audit] == [1, 2, 3]
+    assert [item["node_count"] for item in audit] == [4, 2, 1]
+    assert all(item["pareto_front"] for item in audit)
     assert all(item["selected_for_frozen_test"] for item in audit)
+
+
+def test_safe_tree_canonicalization_and_single_site_mutations() -> None:
+    close = ExpressionTree("terminal", "c")
+    zero = ExpressionTree("constant", 0.0)
+    one = ExpressionTree("constant", 1.0)
+    double_negative = ExpressionTree(
+        "function",
+        "neg",
+        (ExpressionTree("function", "neg", (close,)),),
+    )
+    assert canonicalize_tree(double_negative) == close
+    assert canonicalize_tree(ExpressionTree("function", "add", (zero, close))) == close
+    assert canonicalize_tree(ExpressionTree("function", "mul", (one, close))) == close
+    assert canonicalize_tree(
+        ExpressionTree(
+            "function",
+            "add",
+            (ExpressionTree("terminal", "o"), close),
+        )
+    ).children == (close, ExpressionTree("terminal", "o"))
+
+    window_tree = ExpressionTree("function", "ts_rank", (close,), 20)
+    changed_window = mutate_window(
+        window_tree,
+        np.random.default_rng(1),
+        windows=(10, 20, 40),
+    )
+    assert changed_window.parameter in {10, 40}
+
+    constant_tree = ExpressionTree(
+        "function",
+        "add",
+        (close, ExpressionTree("constant", 0.3)),
+    )
+    changed_constant = mutate_constant(
+        constant_tree,
+        np.random.default_rng(2),
+        constant_range=(-1.0, 1.0),
+    )
+    assert changed_constant.to_expression() != constant_tree.to_expression()
+
+    assert delete_node(
+        ExpressionTree("function", "abs", (close,)),
+        np.random.default_rng(3),
+    ) == close
+    inserted = insert_node(
+        close,
+        np.random.default_rng(4),
+        functions=tuple(spec for spec in FUNCTION_SPECS if spec.arity == 1),
+    )
+    assert inserted.node_count == 2
+    assert inserted.children == (close,)
+
+    operator_mutated = point_mutation(
+        ExpressionTree("function", "abs", (close,)),
+        np.random.default_rng(5),
+        replacement_probability=1.0,
+        functions=(FUNCTION_BY_NAME["abs"], FUNCTION_BY_NAME["log"]),
+    )
+    assert operator_mutated.value == "log"
+    assert operator_mutated.children == (close,)
+
+
+def test_complexity_warmup_opens_full_limits_only_for_final_generation() -> None:
+    config = EvolutionConfig(
+        generations=3,
+        population_size=4,
+        hall_of_fame=4,
+        n_components=2,
+        tournament_size=2,
+        max_depth=8,
+        max_nodes=127,
+    )
+    limits = [active_limits(config, generation) for generation in range(3)]
+    assert [(item.max_depth, item.max_nodes) for item in limits] == [
+        (4, 31),
+        (6, 63),
+        (8, 127),
+    ]
+    assert active_limits(
+        replace(config, generations=1),
+        0,
+    ).max_nodes == 127
+    assert active_limits(
+        replace(config, complexity_warmup=False),
+        0,
+    ).max_nodes == 127
 
 
 def test_training_fitness_cannot_see_test_returns() -> None:
@@ -183,6 +333,120 @@ def test_training_fitness_cannot_see_test_returns() -> None:
     assert original.ic_count == changed.ic_count
     assert np.isclose(original.ic_mean, changed.ic_mean)
     assert np.isclose(original.ic_std, changed.ic_std)
+
+
+def test_negative_training_ic_freezes_a_negated_expression() -> None:
+    data = synthetic_market_data()
+    context = prepare_fitness_context(
+        data,
+        train_start="2020-01-02",
+        train_end="2020-05-29",
+        preprocess_mode="none",
+        minimum_ic_days=20,
+    )
+    tree = ExpressionTree("terminal", "c")
+    processed = evaluate_processed_expression(tree.to_expression(), context)
+    negative_ic_context = replace(context, forward_return=-processed)
+
+    result = evaluate_program_fitness(
+        tree,
+        negative_ic_context,
+        parsimony_coefficient=0.01,
+    )
+
+    assert result.ic_mean is not None and result.ic_mean < 0
+    assert result.raw_fitness == result.ic_mean
+    assert result.direction_multiplier == -1
+    assert result.frozen_expression == "(-(c))"
+    assert result.aligned_ic_mean is not None
+    assert np.isclose(result.aligned_ic_mean, abs(result.ic_mean))
+    assert result.frozen_node_count == tree.node_count + 1
+    assert result.selection_score > 0
+    assert np.isclose(
+        result.adjusted_fitness,
+        result.aligned_ic_mean - 0.01 * result.frozen_node_count,
+    )
+
+    already_negated = ExpressionTree("function", "neg", (tree,))
+    negated_factor = evaluate_processed_expression(
+        already_negated.to_expression(), context
+    )
+    simplified = evaluate_program_fitness(
+        already_negated,
+        replace(context, forward_return=-negated_factor),
+        parsimony_coefficient=0.01,
+    )
+    assert simplified.direction_multiplier == -1
+    assert simplified.frozen_expression == "c"
+    assert simplified.frozen_node_count == 1
+
+
+def test_negative_training_ic_is_normalized_before_tournament_evolution() -> None:
+    """A negative raw tree must never be the parent genotype for its generation."""
+
+    data = synthetic_market_data()
+    context = prepare_fitness_context(
+        data,
+        train_start="2020-01-02",
+        train_end="2020-05-29",
+        preprocess_mode="none",
+        minimum_ic_days=20,
+    )
+    raw_tree = ExpressionTree("terminal", "c")
+    processed = evaluate_processed_expression(raw_tree.to_expression(), context)
+    negative_ic_context = replace(context, forward_return=-processed)
+    config = EvolutionConfig(
+        generations=1,
+        population_size=1,
+        hall_of_fame=1,
+        n_components=1,
+        tournament_size=1,
+        elite_size=1,
+        terminals=("c",),
+    )
+
+    scored = evaluate_population(
+        (raw_tree,),
+        negative_ic_context,
+        config,
+        {},
+    )
+
+    assert scored[0].fitness.ic_mean is not None and scored[0].fitness.ic_mean < 0
+    assert scored[0].tree.to_expression() == "(-(c))"
+    assert scored[0].tree.to_expression() == scored[0].fitness.frozen_expression
+    parent = tournament_select(
+        scored,
+        np.random.default_rng(7),
+        tournament_size=1,
+    )
+    assert parent.to_expression() == "(-(c))"
+    offspring = evolve_population(scored, np.random.default_rng(8), config)
+    assert offspring[0].to_expression() == "(-(c))"
+
+    hall: dict[str, ScoredTree] = {}
+    update_hall_of_fame(hall, scored, limit=1)
+    assert list(hall) == ["(-(c))"]
+
+    mirrored_tree = ExpressionTree("function", "neg", (raw_tree,))
+    mirrored_config = EvolutionConfig(
+        generations=1,
+        population_size=2,
+        hall_of_fame=2,
+        n_components=1,
+        tournament_size=1,
+        terminals=("c",),
+    )
+    mirrored_scored = evaluate_population(
+        (raw_tree, mirrored_tree),
+        negative_ic_context,
+        mirrored_config,
+        {},
+    )
+    assert {item.tree.to_expression() for item in mirrored_scored} == {"(-(c))"}
+    assert [item.tree.to_expression() for item in _unique_parent_pool(mirrored_scored)] == [
+        "(-(c))"
+    ]
 
 
 def _write_market_data(root: Path, data: dict[str, pd.DataFrame]) -> None:
@@ -252,6 +516,76 @@ def test_resumable_single_cycle_smoke() -> None:
         assert "admitted_count" not in summary
 
 
+def test_three_generation_runner_persists_warmup_and_pareto_state() -> None:
+    data = synthetic_market_data(periods=130)
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        data_dir = root / "data"
+        _write_market_data(data_dir, data)
+        days = data["c"].index
+        config = MiningCampaignConfig(
+            campaign="phase-one-search",
+            train_start=str(days[0].date()),
+            train_end=str(days[104].date()),
+            test_start=str(days[105].date()),
+            test_end=str(days[-1].date()),
+            data_dir=data_dir,
+            output_dir=root / "outputs",
+            evolution=EvolutionConfig(
+                generations=3,
+                population_size=8,
+                hall_of_fame=6,
+                n_components=3,
+                tournament_size=3,
+                init_depth_min=1,
+                init_depth_max=2,
+                max_depth=8,
+                max_nodes=127,
+                terminals=("c", "o", "vol"),
+            ),
+            n_quantiles=5,
+            preprocess_mode="none",
+            minimum_ic_days=20,
+        )
+        runner = GeneticMiningRunner(config)
+        try:
+            with patch.object(runner, "_evaluate_candidates", return_value=[]):
+                summary = runner.run_cycle()
+        finally:
+            runner.close()
+
+        cycle = config.root / "cycles/cycle_000001"
+        limits = []
+        for generation in range(1, 4):
+            payload = json.loads(
+                (
+                    cycle
+                    / "generations"
+                    / f"generation_{generation:03d}.json"
+                ).read_text(encoding="utf-8")
+            )
+            limits.append(
+                (payload["active_max_depth"], payload["active_max_nodes"])
+            )
+            assert payload["pareto_hall_of_fame_size"] <= config.evolution.hall_of_fame
+        assert limits == [(4, 31), (6, 63), (8, 127)]
+        checkpoint = json.loads(
+            (cycle / "checkpoint.json").read_text(encoding="utf-8")
+        )
+        hall = [
+            ScoredTree.from_dict(item)
+            for item in checkpoint["hall_of_fame"]
+        ]
+        assert all(
+            not dominates(other, item)
+            for item in hall
+            for other in hall
+            if other is not item
+        )
+        assert all(item["pareto_front"] for item in checkpoint["selection_audit"])
+        assert summary["search_protocol"] == config.test_screening_protocol
+
+
 def test_profitability_screen_runs_ic_only_for_survivors() -> None:
     data = synthetic_market_data(periods=130)
     with tempfile.TemporaryDirectory() as temporary:
@@ -291,6 +625,8 @@ def test_profitability_screen_runs_ic_only_for_survivors() -> None:
                 pair_count=1000,
                 node_count=1,
                 depth=1,
+                frozen_expression="(-(c))" if expression == "c" else expression,
+                direction_multiplier=-1 if expression == "c" else 1,
             ),
         )
         calls: list[tuple[str, str]] = []
@@ -298,7 +634,7 @@ def test_profitability_screen_runs_ic_only_for_survivors() -> None:
         def fake_evaluate_factor_standards(*, expression, standards, **_kwargs):
             standard = next(iter(standards))
             calls.append((expression, standard))
-            passed = expression == "o"
+            passed = expression == "(-(c))"
             return {
                 "overall_passed": passed,
                 "summary_path": f"/{expression}/{standard}.json",
@@ -319,31 +655,36 @@ def test_profitability_screen_runs_ic_only_for_survivors() -> None:
             runner.close()
 
         assert calls == [
-            ("c", "profitability_test"),
+            ("(-(c))", "profitability_test"),
+            ("(-(c))", "ic_test"),
             ("o", "profitability_test"),
-            ("o", "ic_test"),
         ]
-        assert records[0]["profitability_passed"] is False
-        assert records[0]["ic_checked"] is False
-        assert set(records[0]["standard_gates"]) == {"profitability_test"}
-        assert records[1]["profitability_passed"] is True
-        assert records[1]["ic_checked"] is True
-        assert records[1]["ic_passed"] is True
-        assert records[1]["test_overall_passed"] is True
-        assert records[1]["factor_library_submission_requested"] is True
-        assert set(records[1]["standard_gates"]) == {
+        assert records[0]["profitability_passed"] is True
+        assert records[0]["ic_checked"] is True
+        assert records[0]["ic_passed"] is True
+        assert records[0]["test_overall_passed"] is True
+        assert records[0]["factor_library_submission_requested"] is True
+        assert records[0]["expression"] == "(-(c))"
+        assert records[0]["raw_expression"] == "c"
+        assert records[0]["direction_multiplier"] == -1
+        assert set(records[0]["standard_gates"]) == {
             "profitability_test",
             "ic_test",
         }
+        assert records[1]["profitability_passed"] is False
+        assert records[1]["ic_checked"] is False
+        assert set(records[1]["standard_gates"]) == {"profitability_test"}
         request_path = (
             config.root
             / "cycles/cycle_000001/candidates"
-            / records[1]["factor_name"]
+            / records[0]["factor_name"]
             / "factor_library_submission_request.json"
         )
         request = json.loads(request_path.read_text(encoding="utf-8"))
-        assert request["factor_name"] == records[1]["factor_name"]
-        assert request["expression"] == "o"
+        assert request["factor_name"] == records[0]["factor_name"]
+        assert request["expression"] == "(-(c))"
+        assert request["raw_expression"] == "c"
+        assert request["direction_multiplier"] == -1
         assert request["testing_protocol"] == config.test_screening_protocol
         assert not request_path.with_name("factor_library_submission.json").exists()
 
@@ -393,9 +734,14 @@ def test_correlation_gated_library_admission() -> None:
 
 def main() -> None:
     test_expression_trees_and_evolution()
-    test_hall_of_fame_selects_top_fitness_without_internal_correlation_gate()
+    test_pareto_hall_of_fame_and_complexity_stratified_selection()
+    test_safe_tree_canonicalization_and_single_site_mutations()
+    test_complexity_warmup_opens_full_limits_only_for_final_generation()
     test_training_fitness_cannot_see_test_returns()
+    test_negative_training_ic_freezes_a_negated_expression()
+    test_negative_training_ic_is_normalized_before_tournament_evolution()
     test_resumable_single_cycle_smoke()
+    test_three_generation_runner_persists_warmup_and_pareto_state()
     test_profitability_screen_runs_ic_only_for_survivors()
     test_correlation_gated_library_admission()
     print("genetic mining contracts passed")

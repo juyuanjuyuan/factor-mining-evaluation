@@ -15,6 +15,7 @@ from .future_perturbation import (
     future_data_perturbation_test,
     perturb_data_after,
 )
+from .fitness import calculate_yearly_fitness, evaluate_fitness
 from .ic_horizon_decay import (
     IC_HORIZON_DECAY_MAX_HORIZON,
     IC_HORIZON_DECAY_MIN_HORIZON,
@@ -90,6 +91,7 @@ __all__ = [
     "available_evaluation_methods",
     "calc_group_returns",
     "calc_ic",
+    "calculate_yearly_fitness",
     "calculate_quantile_net_returns",
     "compare_ic_trend_filters",
     "apply_cycle_context",
@@ -97,6 +99,7 @@ __all__ = [
     "evaluate_quantile_net_returns",
     "evaluate_quantile_returns",
     "evaluate_future_data_perturbation",
+    "evaluate_fitness",
     "evaluate_ic_horizon_decay",
     "evaluate_ic_peak_decay",
     "evaluate_ic_trend_filter",

@@ -16,13 +16,14 @@ import {
   Segmented,
   Skeleton,
   Spin,
+  Table,
   Tag,
   Tooltip,
   Typography,
 } from 'antd'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { api, GateConditionResult, MarketCycleBackground } from '../api/client'
+import { api, Detail, GateConditionResult, MarketCycleBackground } from '../api/client'
 import { BackButton } from '../components/BackButton'
 import { LazyRender } from '../components/LazyRender'
 import { StatusTag } from '../components/StatusTag'
@@ -33,6 +34,7 @@ import {
   METRIC_GROUPS,
   PARAM_KEYS,
   detailTitle,
+  detailColumnTitle,
   formatMetric,
   metricSpec,
   methodLabel,
@@ -43,11 +45,12 @@ import {
   durationText,
 } from '../lib/metrics'
 
-type DetailDisplayKind = 'series' | 'summary'
+type DetailDisplayKind = 'series' | 'summary' | 'table'
 
 function detailDisplayKind(name: string): DetailDisplayKind | null {
   const base = splitVersion(name).base
   if (base === 'group_returns') return 'summary'
+  if (base === 'yearly_fitness') return 'table'
   if (
     base === 'ic' ||
     base === 'ic_horizon_decay' ||
@@ -59,6 +62,52 @@ function detailDisplayKind(name: string): DetailDisplayKind | null {
     base.includes('autocovariances')
   ) return 'series'
   return null
+}
+
+function formatYearlyFitnessValue(column: string, value: unknown): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '—'
+  if (column === 'trading_days') return String(Math.round(value))
+  if (['cumulative_net_return', 'annualized_net_return', 'mean_daily_one_way_turnover', 'annual_max_drawdown'].includes(column)) {
+    return `${(value * 100).toFixed(2)}%`
+  }
+  return value.toFixed(4)
+}
+
+function YearlyFitnessTable({ detail }: { detail: Detail }) {
+  const visibleColumns = detail.columns.filter(
+    (column) => !['drawdown_penalty_lambda', 'fitness_radicand'].includes(column),
+  )
+  const rows = detail.index.map((year, rowIndex) => ({
+    key: year,
+    year,
+    ...Object.fromEntries(
+      detail.columns.map((column, columnIndex) => [column, detail.data[rowIndex]?.[columnIndex] ?? null]),
+    ),
+  }))
+  const columns = [
+    { title: '自然年', dataIndex: 'year', key: 'year', width: 96 },
+    ...visibleColumns.map((column) => ({
+      title: detailColumnTitle(column),
+      dataIndex: column,
+      key: column,
+      align: 'right' as const,
+      render: (value: unknown) => formatYearlyFitnessValue(column, value),
+    })),
+  ]
+  return (
+    <>
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+        最高分位组的净收益、单边换手与年度最大回撤按信号日期所属自然年汇总；首尾不足一年的收益已按实际交易日数年化。回撤惩罚在根号外扣除。
+      </Typography.Paragraph>
+      <Table
+        size="small"
+        columns={columns}
+        dataSource={rows}
+        pagination={false}
+        scroll={{ x: 'max-content' }}
+      />
+    </>
+  )
 }
 
 function DetailPanel({
@@ -84,6 +133,8 @@ function DetailPanel({
     <Card className="surface-card section-card" title={detailTitle(name)}>
       {displayKind === 'series' ? (
         <DetailChart detail={detail.data} cycleBackgrounds={cycleBackgrounds} />
+      ) : displayKind === 'table' ? (
+        <YearlyFitnessTable detail={detail.data} />
       ) : (
         <SummaryBar detail={detail.data} />
       )}

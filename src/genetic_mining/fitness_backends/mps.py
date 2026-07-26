@@ -16,6 +16,7 @@ from ..fitness import (
     FitnessResult,
     MARKET_CAP_INDUSTRY_MODE,
     MIN_INDUSTRY_OBSERVATIONS,
+    build_fitness_result,
 )
 from ..tree import ExpressionTree
 
@@ -840,22 +841,16 @@ class MPSFitnessBackend:
                 )
             ic_mean = float(finite_ic.mean())
             ic_std = float(finite_ic.std(ddof=1))
-            ir = ic_mean / ic_std if np.isfinite(ic_std) and ic_std > 0 else np.nan
-            adjusted = ic_mean - float(parsimony_coefficient) * tree.node_count
             pair_count = int(
                 counts.detach().cpu().numpy()[finite].sum(dtype=np.int64)
             )
-            return FitnessResult(
-                expression=expression,
-                raw_fitness=ic_mean if np.isfinite(ic_mean) else None,
-                adjusted_fitness=adjusted if np.isfinite(adjusted) else None,
-                ic_mean=ic_mean if np.isfinite(ic_mean) else None,
-                ic_std=ic_std if np.isfinite(ic_std) else None,
-                ir=ir if np.isfinite(ir) else None,
-                ic_count=int(len(finite_ic)),
+            return build_fitness_result(
+                tree,
+                ic_mean=ic_mean,
+                ic_std=ic_std,
+                ic_count=len(finite_ic),
                 pair_count=pair_count,
-                node_count=tree.node_count,
-                depth=tree.depth,
+                parsimony_coefficient=parsimony_coefficient,
             )
         except Exception as exc:
             return FitnessResult(

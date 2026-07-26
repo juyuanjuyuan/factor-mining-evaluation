@@ -181,6 +181,33 @@ metrics 输出对 QN 各窗口滚动 Sharpe 序列的分布摘要而非末值
 metrics 输出分布摘要：`*_worst`（最深窗口回撤）与 `*_median`（中位数）。
 非重叠窗口序列写入 `details/rolling_drawdown_<window>`。
 
+## 年度 Fitness
+
+方法名：`fitness`，依赖 `quantile_net_returns`，因此固定使用已扣显性交易成本的最高分位组
+`GN` 日收益和单边换手；它不加入默认 pipeline。
+
+以因子信号日期所属的自然年分组。对第 `y` 年内的 `T_y` 个有效日收益，先计算全年累计
+净收益和年化净收益；首尾不满自然年的样本也使用实际 `T_y` 按 252 个交易日几何年化：
+
+```text
+R_y = (prod(1 + r_t, t in y)) ** (252 / T_y) - 1
+S_y = sqrt(252) * mean(r_t, t in y) / std(r_t, ddof=1)
+tau_y = mean(one_way_turnover_t, t in y)
+W_{y,k} = prod(1 + r_t, t <= k and t in y)
+D_y = max(1 - W_{y,k} / max(1, max(W_{y,u}, u <= k)), k in y)
+lambda_y = 1 / (1 - abs(D_y)) ** 2
+A_y = abs(R_y) / max(tau_y, epsilon)
+Fitness_y = S_y * sqrt(A_y) - lambda_y * D_y, where epsilon = 0.125
+```
+
+`details/yearly_fitness` 为每个自然年输出交易日数、该年累计净收益、用于公式的年化净收益、
+年化 Sharpe、日均单边换手、年度最大回撤幅度、`lambda_y`、收益换手根号项 `A_y` 和 Fitness。
+`D_y` 为正的回撤幅度，`epsilon` 固定为 0.125；回撤惩罚 `lambda_y * D_y` 在根号外直接
+扣除。若 `D_y >= 1`，`lambda_y` 不可定义，该年 Fitness 不纳入总平均。总指标 `fitness`
+是所选日期中所有具有有限年度 Fitness 的自然年
+等权平均，并非按交易日数加权。少于两个有效日或日收益标准差为零的年份无法计算
+Sharpe/Fitness，仍保留在表格中，但不进入总平均。
+
 ## 入场可交易性过滤（开盘涨跌停/ST 剔除）
 
 方法名：`tradability_filter`，额外需要 `o`、`limit`、`st` 数据。

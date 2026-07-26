@@ -31,7 +31,9 @@ from engine import (
 )
 
 
-CACHE_VERSION = 1
+# Bump whenever cached matrix values may differ even if the factor definitions
+# and market-data files have not changed, forcing a safe rebuild on next use.
+CACHE_VERSION = 2
 CORRELATION_METHOD = "pooled_pearson"
 CORRELATION_THRESHOLD = 0.75
 CORRELATION_WINDOW = 60
@@ -57,6 +59,44 @@ class FactorCorrelationThresholdError(FactorCorrelationError):
             "因子库要求所有非对角元素的绝对 Pearson 相关系数不超过 "
             f"{threshold:.2f}，当前不通过：{examples}{remainder}"
         )
+
+
+def _standardized_for_pearson(values: np.ndarray) -> np.ndarray | None:
+    """Return a unit-norm centered vector without overflowing float64.
+
+    Pearson correlation is invariant to independently multiplying either
+    input by a positive finite constant.  Scale *before* centering so both
+    the mean and the sum of squared deviations stay in the float64 range.
+    ``None`` means that the finite input is constant and therefore has no
+    defined Pearson correlation.
+    """
+
+    maximum = float(np.max(np.abs(values)))
+    if not np.isfinite(maximum) or maximum == 0.0:
+        return None
+    centered = values / maximum
+    centered -= float(centered.mean())
+    norm = float(np.linalg.norm(centered))
+    if not np.isfinite(norm) or norm == 0.0:
+        return None
+    return centered / norm
+
+
+def _stable_pearson_correlation(
+    left: np.ndarray,
+    right: np.ndarray,
+) -> float | None:
+    """Calculate Pearson correlation after scale-safe standardization."""
+
+    standardized_left = _standardized_for_pearson(left)
+    standardized_right = _standardized_for_pearson(right)
+    if standardized_left is None or standardized_right is None:
+        return None
+    correlation = float(np.dot(standardized_left, standardized_right))
+    if not np.isfinite(correlation):
+        return None
+    # A small rounding overshoot must not produce an impossible |rho| > 1.
+    return float(np.clip(correlation, -1.0, 1.0))
 
 
 @dataclass(frozen=True)
@@ -106,12 +146,10 @@ def non_overlapping_pair_correlations(
         paired_observations = int(paired.sum())
         correlation: float | None = None
         if paired_observations >= MIN_PAIRED_OBSERVATIONS:
-            x = left_values[paired]
-            y = right_values[paired]
-            if not np.isclose(np.std(x), 0.0) and not np.isclose(np.std(y), 0.0):
-                candidate = float(np.corrcoef(x, y)[0, 1])
-                if np.isfinite(candidate):
-                    correlation = candidate
+            correlation = _stable_pearson_correlation(
+                left_values[paired],
+                right_values[paired],
+            )
 
         start_day = pd.Timestamp(left.index[start_position]).date().isoformat()
         end_day = pd.Timestamp(left.index[stop_position - 1]).date().isoformat()
@@ -351,7 +389,7 @@ class FactorCorrelationService:
             raise FactorCorrelationError(
                 f"因子 {definition.factor_name} 的有效暴露少于 {MIN_PAIRED_OBSERVATIONS} 个，无法计算相关性"
             )
-        if np.isclose(np.std(values), 0.0):
+        if _standardized_for_pearson(values) is None:
             raise FactorCorrelationError(
                 f"因子 {definition.factor_name} 的有效暴露为常数，无法计算相关性"
             )
@@ -372,17 +410,14 @@ class FactorCorrelationService:
                 f"因子 {left_definition.factor_name} 与 {right_definition.factor_name} "
                 f"的共同有效暴露少于 {MIN_PAIRED_OBSERVATIONS} 个"
             )
-        x = left_values[paired]
-        y = right_values[paired]
-        if np.isclose(np.std(x), 0.0) or np.isclose(np.std(y), 0.0):
+        correlation = _stable_pearson_correlation(
+            left_values[paired],
+            right_values[paired],
+        )
+        if correlation is None:
             raise FactorCorrelationError(
                 f"因子 {left_definition.factor_name} 与 {right_definition.factor_name} "
                 "在共同有效样本中存在常数暴露，无法计算相关性"
-            )
-        correlation = float(np.corrcoef(x, y)[0, 1])
-        if not np.isfinite(correlation):
-            raise FactorCorrelationError(
-                f"因子 {left_definition.factor_name} 与 {right_definition.factor_name} 的相关性不是有限数值"
             )
         return correlation
 

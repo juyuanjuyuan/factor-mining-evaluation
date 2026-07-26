@@ -435,7 +435,7 @@ class GeneticMiningSupervisor:
             results[(cycle, factor_name)] = result
             if result.get("status") == "admitted":
                 counts["admitted"] += 1
-            elif result.get("status") == "rejected_correlation":
+            elif result.get("status") in {"rejected_correlation", "rejected_performance"}:
                 counts["rejected"] += 1
             elif result.get("status") == "pending":
                 counts["pending"] += 1

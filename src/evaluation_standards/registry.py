@@ -30,6 +30,7 @@ PROFITABILITY_METHOD_NAMES = (
     "industry_market_cap_neutralize",
     "tradability_filter",
     "quantile_net_returns",
+    "fitness",
     "quantile_cumulative",
     "quantile_plot",
     "rolling_sharpe",

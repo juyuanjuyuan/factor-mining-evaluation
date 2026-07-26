@@ -62,6 +62,7 @@ def test_registry_matches_webapp_templates() -> None:
     assert standards[1].method_names == PROFITABILITY_METHOD_NAMES
     assert IC_METHOD_NAMES[1] == "industry_market_cap_neutralize"
     assert PROFITABILITY_METHOD_NAMES[0] == "industry_market_cap_neutralize"
+    assert "fitness" in PROFITABILITY_METHOD_NAMES
 
 
 def test_gate_logic() -> None:
@@ -136,6 +137,7 @@ def test_synthetic_standard_execution() -> None:
         assert result["standards"]["profitability_test"]["methods"] == list(
             PROFITABILITY_METHOD_NAMES
         )
+        assert "fitness" in result["standards"]["profitability_test"]["metrics"]
         assert Path(result["summary_path"]).is_file()
         for standard in result["standards"].values():
             assert Path(standard["metrics_path"]).is_file()

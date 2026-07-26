@@ -189,6 +189,22 @@ def _attach_latest_runs(
     factors.sort(key=_last_modified, reverse=True)
     for factor in factors:
         latest = db.latest_run(factor["batch_id"], factor["factor_name"])
+        # Formal admission copies a definition and deliberately keeps its
+        # evaluated source in the test library. Reuse that source run when the
+        # formal copy has no successful run of its own, so the library table
+        # exposes the same Sharpe/Fitness evidence used by admission.
+        if (
+            factor.get("library_scope") == "factor"
+            and (latest is None or latest.get("status") != "succeeded")
+            and factor.get("source_batch_id")
+            and factor.get("source_factor_name")
+        ):
+            source_latest = db.latest_run(
+                str(factor["source_batch_id"]),
+                str(factor["source_factor_name"]),
+            )
+            if source_latest is not None:
+                latest = source_latest
         factor["latest_run"] = latest
     return factors
 

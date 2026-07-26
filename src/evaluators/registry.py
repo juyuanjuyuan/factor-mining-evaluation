@@ -10,6 +10,7 @@ from .base import (
     method_metadata,
 )
 from .cycle_context import apply_cycle_context
+from .fitness import evaluate_fitness
 from .future_perturbation import evaluate_future_data_perturbation
 from .ic_horizon_decay import evaluate_ic_horizon_decay
 from .ic_peak_decay import evaluate_ic_peak_decay

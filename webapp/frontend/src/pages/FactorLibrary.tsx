@@ -19,8 +19,7 @@ const latestMetric = (factor: Factor, key: string): number | null => {
 function MetricValue({ factor, metric }: { factor: Factor; metric: string }) {
   const value = latestMetric(factor, metric)
   if (value === null) return <Typography.Text type="secondary">暂无</Typography.Text>
-  const tone =
-    metric === 'nw_ic_p_value' ? (value < 0.05 ? 'good' : '') : value > 0 ? 'good' : value < 0 ? 'bad' : ''
+  const tone = value > 0 ? 'good' : value < 0 ? 'bad' : ''
   return <span className={`metric-number ${tone}`}>{formatMetric(metric, value)}</span>
 }
 
@@ -139,7 +138,12 @@ export default function FactorLibrary({ mode }: FactorLibraryProps) {
   const submit = useMutation({
     mutationFn: (factor: Factor) => api.submitFactor(factor.batch_id, factor.factor_name),
     onSuccess: (factor) => {
-      message.success('已提交到因子库')
+      const replaced = factor.admission_decision?.replaced_factor_names || []
+      message.success(
+        replaced.length
+          ? `已提交到因子库；${replaced.join('、')} 因相关性高且表现较弱已降级至测试库`
+          : '已提交到因子库',
+      )
       queryClient.invalidateQueries({ queryKey: ['test-factors'] })
       queryClient.invalidateQueries({ queryKey: ['factors'] })
       navigate(`/factors/${factor.batch_id}/${factor.factor_name}`)
@@ -501,7 +505,7 @@ export default function FactorLibrary({ mode }: FactorLibraryProps) {
           rowKey={(factor) => `${factor.batch_id}/${factor.factor_name}`}
           loading={factors.isLoading}
           dataSource={projectFactors}
-          scroll={{ x: 1360 }}
+          scroll={{ x: 1420 }}
           sticky={{ offsetHeader: 68 }}
           rowSelection={{
             selectedRowKeys: selected.filter((key) =>
@@ -556,26 +560,22 @@ export default function FactorLibrary({ mode }: FactorLibraryProps) {
               ),
             },
             {
-              title: 'IC 均值',
+              title: <Tooltip title="最高分位组按每年 252 个交易日几何年化的收益率">年化收益率</Tooltip>,
+              width: 118,
+              sorter: sorter('top_group_annualized_return'),
+              render: (_, factor) => <MetricValue factor={factor} metric="top_group_annualized_return" />,
+            },
+            {
+              title: <Tooltip title="最高分位组 60 日非重叠窗口年化 Sharpe 的中位数">60日窗口 Sharpe 中位数</Tooltip>,
+              width: 176,
+              sorter: sorter('gn_rolling_sharpe_60_median'),
+              render: (_, factor) => <MetricValue factor={factor} metric="gn_rolling_sharpe_60_median" />,
+            },
+            {
+              title: <Tooltip title="最高分位组各自然年 Fitness 的等权平均">Fitness</Tooltip>,
               width: 96,
-              sorter: sorter('ic_mean'),
-              render: (_, factor) => <MetricValue factor={factor} metric="ic_mean" />,
-            },
-            {
-              title: 'ICIR',
-              width: 90,
-              sorter: sorter('ir'),
-              render: (_, factor) => <MetricValue factor={factor} metric="ir" />,
-            },
-            {
-              title: (
-                <Tooltip title="Newey-West 检验的 p 值，绿色表示 5% 显著">
-                  <span>p 值</span>
-                </Tooltip>
-              ),
-              width: 84,
-              sorter: sorter('nw_ic_p_value'),
-              render: (_, factor) => <MetricValue factor={factor} metric="nw_ic_p_value" />,
+              sorter: sorter('fitness'),
+              render: (_, factor) => <MetricValue factor={factor} metric="fitness" />,
             },
             {
               title: '最近评价',
@@ -642,7 +642,7 @@ export default function FactorLibrary({ mode }: FactorLibraryProps) {
                     />
                   </Tooltip>
                   {isTestLibrary && (
-                    <Tooltip title={factor.submitted ? '已在因子库中' : '提交后会出现在因子库'}>
+                    <Tooltip title={factor.submitted ? '已在因子库中' : '提交时先做相关性检验；若与库内因子高度相关，仅在 60 日 Sharpe 中位数（同分看 Fitness）严格更优时替换旧因子'}>
                       <Button
                         size="small"
                         icon={<CheckCircleOutlined />}

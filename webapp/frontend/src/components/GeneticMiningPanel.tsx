@@ -105,9 +105,9 @@ function CandidateRows({ campaign }: { campaign: GeneticCampaign }) {
         const submissionTag = !candidate.test_overall_passed
           ? { color: candidate.status === 'failed' ? 'red' : 'default', text: candidate.status === 'failed' ? '测试异常' : '未通过测试' }
           : submission?.status === 'admitted'
-            ? { color: 'green', text: submission.already_present ? '已在因子库' : '因子库已入库' }
-            : submission?.status === 'rejected_correlation'
-              ? { color: 'orange', text: '因子库相关性未通过' }
+            ? { color: 'green', text: submission.already_present ? '已在因子库' : submission.replaced_factor_names?.length ? `已入库并替换 ${submission.replaced_factor_names.length} 个高相关因子` : '因子库已入库' }
+            : submission?.status === 'rejected_correlation' || submission?.status === 'rejected_performance'
+              ? { color: 'orange', text: submission.status === 'rejected_performance' ? '高相关且性能未胜出，保留测试库' : '因子库相关性未通过' }
               : submission?.status === 'failed' || submission?.status === 'name_conflict'
                 ? { color: 'red', text: '因子库提交失败' }
                 : candidate.factor_library_submission_requested !== true
@@ -211,7 +211,7 @@ function CampaignCard({ campaign }: { campaign: GeneticCampaign }) {
           { title: '训练集进化', description: currentGeneration || '等待种群计算' },
           { title: '测试集盈利标准', description: campaign.current_stage === 'testing' ? '先筛冻结表达式' : '市值+行业中性化后的净分组收益' },
           { title: '测试集 IC', description: '仅对盈利存活者检测' },
-          { title: '提交因子库', description: '因子库负责相关性检验与入库裁决' },
+          { title: '提交因子库', description: '相关性冲突时以 60 日 Sharpe 中位数、再以 Fitness 裁决替换' },
           { title: '完成本轮', description: `${campaign.completed_cycles} 个 cycle` },
         ]}
       />
@@ -231,7 +231,7 @@ function CampaignCard({ campaign }: { campaign: GeneticCampaign }) {
         <Statistic title="当前 cycle" value={campaign.current_cycle ?? '—'} />
         <Statistic title="测试通过" value={campaign.test_passed_count} />
         <Statistic title="因子库已入库" value={campaign.factor_library_admitted_count} valueStyle={campaign.factor_library_admitted_count ? { color: '#008A3E' } : undefined} />
-        <Statistic title="因子库相关性未通过" value={campaign.factor_library_rejected_count} />
+        <Statistic title="因子库冲突未入库" value={campaign.factor_library_rejected_count} />
         <Statistic title="候选失败" value={campaign.failed_candidate_count} />
       </div>
       <Collapse
@@ -315,8 +315,8 @@ export function GeneticMiningPanel({ open, onOpen, onClose }: { open: boolean; o
   const create = useMutation({
     mutationFn: (values: GeneticCampaignInput) => api.createGeneticCampaign({
       ...values,
-      // The current GP protocol freezes exactly the training-fitness top N.
-      // Keep the legacy CLI fields aligned instead of exposing two copies of N.
+      // The current GP protocol freezes at most N candidates from the Pareto HOF.
+      // Keep the archive/test caps aligned instead of exposing two copies of N.
       components: values.hall_of_fame,
       max_cycles: values.continuous ? values.max_cycles || null : null,
     }),
@@ -386,7 +386,7 @@ export function GeneticMiningPanel({ open, onOpen, onClose }: { open: boolean; o
           type="info"
           showIcon
           message="冻结训练/测试边界"
-          description="训练集只用于表达式进化和候选去重。冻结后的表达式先用市值+行业中性化后的净分组收益筛选；仅盈利存活者再做测试集 IC 检测。两关均通过后会自动交接给因子库；相关性检验和是否正式入库均由因子库流程裁决，GP 不执行。"
+          description="训练集只用于表达式进化、规范化去重和 Pareto HOF；父代锦标赛仍使用 IC 减复杂度惩罚。冻结后的表达式先用市值+行业中性化后的净分组收益筛选；仅盈利存活者再做测试集 IC 检测。两关均通过后会自动交接给因子库；若相关性冲突，因子库以同口径的 60 日窗口 Sharpe 中位数优先、同分再以 Fitness 比较，只有严格更优的候选才能替换旧正式因子，旧定义保留在测试库。"
         />
         {active && (
           <Alert
@@ -468,7 +468,7 @@ export function GeneticMiningPanel({ open, onOpen, onClose }: { open: boolean; o
             items={[
               {
                 key: 'evolution',
-                label: '进化参数（默认复现论文）',
+                label: '进化参数（阶段 1 优化）',
                 children: (
                   <div className="gp-parameter-grid">
                     <Form.Item label="种群规模" name="population_size" rules={[{ required: true }]}>
@@ -478,10 +478,10 @@ export function GeneticMiningPanel({ open, onOpen, onClose }: { open: boolean; o
                       <InputNumber min={1} max={100} />
                     </Form.Item>
                     <Form.Item
-                      label="冻结测试候选数（跨各代训练 fitness 前 N）"
+                      label="Pareto HOF / 冻结测试候选上限"
                       name="hall_of_fame"
                       rules={[{ required: true }]}
-                      extra="三代训练结果合并后，直接按训练 fitness 取前 N 进入测试；Webapp 不再提供独立的 HOF 容量或候选数，避免两个 N 产生歧义。"
+                      extra="跨代按同向训练 IC 与节点数维护 Pareto 前沿，再按复杂度覆盖冻结最多 N 个候选；前沿不足 N 时不会用被支配表达式补满。"
                     >
                       <InputNumber min={1} max={500} />
                     </Form.Item>

@@ -51,19 +51,31 @@ def build_parser() -> argparse.ArgumentParser:
         "--components",
         type=int,
         default=100,
-        help="highest-fitness HOF candidates frozen for test evaluation",
+        help="maximum Pareto-HOF candidates frozen for test evaluation",
     )
     parser.add_argument("--init-depth-min", type=int, default=1)
     parser.add_argument("--init-depth-max", type=int, default=4)
     parser.add_argument("--tournament-size", type=int, default=20)
     parser.add_argument("--parsimony-coefficient", type=float, default=0.0001)
-    parser.add_argument("--p-crossover", type=float, default=0.40)
-    parser.add_argument("--p-subtree-mutation", type=float, default=0.01)
-    parser.add_argument("--p-hoist-mutation", type=float, default=0.0)
-    parser.add_argument("--p-point-mutation", type=float, default=0.01)
-    parser.add_argument("--p-point-replace", type=float, default=0.40)
+    parser.add_argument("--p-crossover", type=float, default=0.25)
+    parser.add_argument("--p-subtree-mutation", type=float, default=0.18)
+    parser.add_argument("--p-delete-mutation", type=float, default=0.12)
+    parser.add_argument("--p-insert-mutation", type=float, default=0.12)
+    parser.add_argument("--p-point-mutation", type=float, default=0.10)
+    parser.add_argument("--p-window-mutation", type=float, default=0.08)
+    parser.add_argument("--p-constant-mutation", type=float, default=0.05)
+    parser.add_argument("--p-hoist-mutation", type=float, default=0.05)
+    parser.add_argument("--p-random-tree", type=float, default=0.05)
+    parser.add_argument("--p-point-replace", type=float, default=1.0)
     parser.add_argument("--max-depth", type=int, default=8)
     parser.add_argument("--max-nodes", type=int, default=127)
+    parser.add_argument(
+        "--no-complexity-warmup",
+        action="store_false",
+        dest="complexity_warmup",
+        help="open the final max-depth/max-nodes limits from generation one",
+    )
+    parser.set_defaults(complexity_warmup=True)
     parser.add_argument("--elite-size", type=int, default=1)
     parser.add_argument("--n-jobs", type=int, default=1)
     parser.add_argument(
@@ -105,11 +117,17 @@ def build_config(args: argparse.Namespace) -> MiningCampaignConfig:
         parsimony_coefficient=args.parsimony_coefficient,
         p_crossover=args.p_crossover,
         p_subtree_mutation=args.p_subtree_mutation,
+        p_delete_mutation=args.p_delete_mutation,
+        p_insert_mutation=args.p_insert_mutation,
         p_hoist_mutation=args.p_hoist_mutation,
         p_point_mutation=args.p_point_mutation,
+        p_window_mutation=args.p_window_mutation,
+        p_constant_mutation=args.p_constant_mutation,
+        p_random_tree=args.p_random_tree,
         p_point_replace=args.p_point_replace,
         max_depth=args.max_depth,
         max_nodes=args.max_nodes,
+        complexity_warmup=args.complexity_warmup,
         elite_size=args.elite_size,
         n_jobs=args.n_jobs,
         compute_backend=args.compute_backend,

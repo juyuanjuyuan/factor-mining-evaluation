@@ -269,6 +269,192 @@ def valid_tree(tree: ExpressionTree, *, max_depth: int, max_nodes: int) -> bool:
     )
 
 
+def _is_constant(tree: ExpressionTree, value: float) -> bool:
+    return tree.kind == "constant" and float(tree.value) == value
+
+
+def _fold_constant_function(
+    name: str,
+    children: tuple[ExpressionTree, ...],
+) -> ExpressionTree | None:
+    """Fold only scalar operations whose protected semantics match the engine."""
+
+    if not children or any(child.kind != "constant" for child in children):
+        return None
+    values = tuple(float(child.value) for child in children)
+    try:
+        if name == "add":
+            value = values[0] + values[1]
+        elif name == "sub":
+            value = values[0] - values[1]
+        elif name == "mul":
+            value = values[0] * values[1]
+        elif name == "div":
+            denominator = values[1] if abs(values[1]) > 1e-6 else 1.0
+            value = values[0] / denominator
+        elif name == "abs":
+            value = abs(values[0])
+        elif name == "sqrt":
+            value = float(np.sqrt(abs(values[0])))
+        elif name == "log":
+            value = float(np.log(abs(values[0]) + 1e-6))
+        elif name == "inv":
+            value = 1.0 / values[0] if abs(values[0]) > 1e-6 else 1.0
+        elif name == "neg":
+            value = -values[0]
+        else:
+            return None
+    except (ArithmeticError, FloatingPointError, ValueError):
+        return None
+    return ExpressionTree("constant", value) if np.isfinite(value) else None
+
+
+def canonicalize_tree(tree: ExpressionTree) -> ExpressionTree:
+    """Apply conservative rewrites that preserve the engine's NaN semantics."""
+
+    if tree.kind == "constant":
+        value = float(tree.value)
+        return ExpressionTree("constant", 0.0 if value == 0.0 else value)
+    if tree.kind == "terminal":
+        return tree
+
+    name = str(tree.value)
+    children = tuple(canonicalize_tree(child) for child in tree.children)
+    folded = _fold_constant_function(name, children)
+    if folded is not None:
+        return folded
+
+    if name == "neg" and children[0].kind == "function" and children[0].value == "neg":
+        return children[0].children[0]
+    if name == "add":
+        if _is_constant(children[0], 0.0):
+            return children[1]
+        if _is_constant(children[1], 0.0):
+            return children[0]
+    if name == "sub" and _is_constant(children[1], 0.0):
+        return children[0]
+    if name == "mul":
+        if _is_constant(children[0], 1.0):
+            return children[1]
+        if _is_constant(children[1], 1.0):
+            return children[0]
+    if name == "div" and _is_constant(children[1], 1.0):
+        return children[0]
+    if name == "rank_cs" and children[0].kind == "function" and children[0].value == "rank_cs":
+        return children[0]
+
+    if name in {"add", "mul"}:
+        children = tuple(sorted(children, key=lambda child: child.to_expression()))
+    return ExpressionTree("function", name, children, tree.parameter)
+
+
+def _paths_matching(
+    tree: ExpressionTree,
+    predicate,
+) -> tuple[tuple[int, ...], ...]:
+    return tuple(path for path in tree.paths() if predicate(tree.subtree(path)))
+
+
+def mutate_window(
+    tree: ExpressionTree,
+    rng: np.random.Generator,
+    *,
+    windows: tuple[int, ...] = DEFAULT_WINDOWS,
+) -> ExpressionTree:
+    """Change exactly one time-series window parameter."""
+
+    paths = _paths_matching(
+        tree,
+        lambda node: (
+            node.kind == "function"
+            and FUNCTION_BY_NAME[str(node.value)].parameter_kind == "window"
+        ),
+    )
+    if not paths:
+        return tree
+    path = paths[int(rng.integers(0, len(paths)))]
+    node = tree.subtree(path)
+    alternatives = tuple(value for value in windows if int(value) != int(node.parameter))
+    if not alternatives:
+        return tree
+    parameter = int(alternatives[int(rng.integers(0, len(alternatives)))])
+    replacement = ExpressionTree(
+        "function",
+        node.value,
+        node.children,
+        parameter,
+    )
+    return tree.replace(path, replacement)
+
+
+def mutate_constant(
+    tree: ExpressionTree,
+    rng: np.random.Generator,
+    *,
+    constant_range: tuple[float, float] | None = (-1.0, 1.0),
+    perturbation_std: float = 0.1,
+) -> ExpressionTree:
+    """Perturb exactly one existing scalar constant."""
+
+    if constant_range is None:
+        return tree
+    paths = _paths_matching(tree, lambda node: node.kind == "constant")
+    if not paths:
+        return tree
+    path = paths[int(rng.integers(0, len(paths)))]
+    node = tree.subtree(path)
+    lower, upper = constant_range
+    value = float(
+        np.clip(float(node.value) + rng.normal(0.0, perturbation_std), lower, upper)
+    )
+    return tree.replace(path, ExpressionTree("constant", value))
+
+
+def delete_node(
+    tree: ExpressionTree,
+    rng: np.random.Generator,
+) -> ExpressionTree:
+    """Delete one function node by promoting one of its children."""
+
+    paths = _paths_matching(tree, lambda node: node.kind == "function")
+    if not paths:
+        return tree
+    path = paths[int(rng.integers(0, len(paths)))]
+    node = tree.subtree(path)
+    child = node.children[int(rng.integers(0, len(node.children)))]
+    return tree.replace(path, child)
+
+
+def insert_node(
+    tree: ExpressionTree,
+    rng: np.random.Generator,
+    *,
+    functions: tuple[FunctionSpec, ...] = FUNCTION_SPECS,
+    windows: tuple[int, ...] = DEFAULT_WINDOWS,
+    exponents: tuple[float, ...] = DEFAULT_EXPONENTS,
+) -> ExpressionTree:
+    """Wrap one subtree in a randomly selected unary function."""
+
+    unary = tuple(spec for spec in functions if spec.arity == 1)
+    if not unary:
+        return tree
+    path = tree.paths()[int(rng.integers(0, len(tree.paths())))]
+    subtree = tree.subtree(path)
+    spec = unary[int(rng.integers(0, len(unary)))]
+    replacement = ExpressionTree(
+        "function",
+        spec.name,
+        (subtree,),
+        _random_parameter(
+            rng,
+            spec.parameter_kind,
+            windows=windows,
+            exponents=exponents,
+        ),
+    )
+    return tree.replace(path, replacement)
+
+
 def point_mutation(
     tree: ExpressionTree,
     rng: np.random.Generator,
@@ -280,51 +466,51 @@ def point_mutation(
     exponents: tuple[float, ...] = DEFAULT_EXPONENTS,
     constant_range: tuple[float, float] | None = (-1.0, 1.0),
 ) -> ExpressionTree:
-    """Replace functions by equal-arity functions and leaves independently."""
+    """Replace exactly one operator or leaf while preserving tree arity."""
 
     if not 0 <= replacement_probability <= 1:
         raise ValueError("replacement_probability must be between zero and one")
-    if tree.kind == "function":
-        children = tuple(
-            point_mutation(
-                child,
+    if rng.random() < replacement_probability:
+        path = tree.paths()[int(rng.integers(0, len(tree.paths())))]
+        node = tree.subtree(path)
+        if node.kind == "function":
+            current = FUNCTION_BY_NAME[str(node.value)]
+            alternatives = tuple(
+                spec
+                for spec in functions
+                if spec.arity == current.arity and spec.name != current.name
+            )
+            if not alternatives:
+                return tree
+            replacement_spec = alternatives[
+                int(rng.integers(0, len(alternatives)))
+            ]
+            replacement = ExpressionTree(
+                "function",
+                replacement_spec.name,
+                node.children,
+                _random_parameter(
+                    rng,
+                    replacement_spec.parameter_kind,
+                    windows=windows,
+                    exponents=exponents,
+                ),
+            )
+        else:
+            replacement = random_leaf(
                 rng,
-                replacement_probability=replacement_probability,
                 terminals=terminals,
-                functions=functions,
-                windows=windows,
-                exponents=exponents,
                 constant_range=constant_range,
             )
-            for child in tree.children
-        )
-        spec = FUNCTION_BY_NAME[str(tree.value)]
-        parameter = tree.parameter
-        value = str(tree.value)
-        if rng.random() < replacement_probability:
-            alternatives = [item for item in functions if item.arity == spec.arity]
-            replacement = alternatives[int(rng.integers(0, len(alternatives)))]
-            value = replacement.name
-            parameter = _random_parameter(
-                rng,
-                replacement.parameter_kind,
-                windows=windows,
-                exponents=exponents,
-            )
-        return ExpressionTree("function", value, children, parameter)
-    if rng.random() < replacement_probability:
-        return random_leaf(
-            rng,
-            terminals=terminals,
-            constant_range=constant_range,
-        )
+        return tree.replace(path, replacement)
     return tree
 
 
 def unique_expressions(trees: Iterable[ExpressionTree]) -> tuple[ExpressionTree, ...]:
     result: list[ExpressionTree] = []
     seen: set[str] = set()
-    for tree in trees:
+    for raw_tree in trees:
+        tree = canonicalize_tree(raw_tree)
         expression = tree.to_expression()
         if expression not in seen:
             seen.add(expression)

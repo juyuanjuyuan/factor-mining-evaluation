@@ -69,6 +69,11 @@ export type Factor = {
   tags: string[]
   latest_run?: Run
   runs?: Run[]
+  admission_decision?: {
+    action: 'replaced_correlated_factors'
+    replaced_factor_names: string[]
+    criterion: string
+  }
 }
 
 export type FactorTag = {
@@ -173,7 +178,7 @@ export type GeneticCandidate = {
   test_overall_passed: boolean
   factor_library_submission_requested?: boolean
   factor_library_submission?: {
-    status: 'pending' | 'admitted' | 'rejected_correlation' | 'name_conflict' | 'failed'
+    status: 'pending' | 'admitted' | 'rejected_correlation' | 'rejected_performance' | 'name_conflict' | 'failed'
     factor_name?: string
     already_present?: boolean
     correlation_checked?: boolean
@@ -182,6 +187,7 @@ export type GeneticCandidate = {
     explanation?: string
     requested_at?: string
     completed_at?: string
+    replaced_factor_names?: string[]
   }
   error?: string
   standard_gates?: Record<string, { passed?: boolean }>

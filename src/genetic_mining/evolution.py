@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from typing import Any, Callable, Mapping, MutableMapping
 
 import numpy as np
@@ -11,6 +11,7 @@ import numpy as np
 from .fitness import (
     FitnessContext,
     FitnessResult,
+    apply_direction_multiplier,
     evaluate_program_fitness,
 )
 from .tree import (
@@ -19,6 +20,11 @@ from .tree import (
     DEFAULT_WINDOWS,
     FUNCTION_SPECS,
     ExpressionTree,
+    canonicalize_tree,
+    delete_node,
+    insert_node,
+    mutate_constant,
+    mutate_window,
     point_mutation,
     random_tree,
     valid_tree,
@@ -36,13 +42,19 @@ class EvolutionConfig:
     init_depth_max: int = 4
     tournament_size: int = 20
     parsimony_coefficient: float = 0.0001
-    p_crossover: float = 0.40
-    p_subtree_mutation: float = 0.01
-    p_hoist_mutation: float = 0.0
-    p_point_mutation: float = 0.01
-    p_point_replace: float = 0.40
+    p_crossover: float = 0.25
+    p_subtree_mutation: float = 0.18
+    p_delete_mutation: float = 0.12
+    p_insert_mutation: float = 0.12
+    p_point_mutation: float = 0.10
+    p_window_mutation: float = 0.08
+    p_constant_mutation: float = 0.05
+    p_hoist_mutation: float = 0.05
+    p_random_tree: float = 0.05
+    p_point_replace: float = 1.0
     max_depth: int = 8
     max_nodes: int = 127
+    complexity_warmup: bool = True
     elite_size: int = 1
     n_jobs: int = 1
     compute_backend: str = "cpu"
@@ -82,13 +94,18 @@ class EvolutionConfig:
         probabilities = (
             self.p_crossover,
             self.p_subtree_mutation,
-            self.p_hoist_mutation,
+            self.p_delete_mutation,
+            self.p_insert_mutation,
             self.p_point_mutation,
+            self.p_window_mutation,
+            self.p_constant_mutation,
+            self.p_hoist_mutation,
+            self.p_random_tree,
         )
         if any(not 0 <= value <= 1 for value in probabilities):
             raise ValueError("genetic operation probabilities must be between zero and one")
-        if sum(probabilities) > 1:
-            raise ValueError("genetic operation probabilities cannot sum above one")
+        if not np.isclose(sum(probabilities), 1.0):
+            raise ValueError("genetic operation probabilities must sum to one")
         if not 0 <= self.p_point_replace <= 1:
             raise ValueError("p_point_replace must be between zero and one")
         if self.parsimony_coefficient < 0:
@@ -102,6 +119,27 @@ class EvolutionConfig:
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def active_limits(config: EvolutionConfig, generation: int) -> EvolutionConfig:
+    """Return the complexity limits used to construct/evaluate one generation."""
+
+    if not 0 <= generation < config.generations:
+        raise ValueError("generation must be within the configured search")
+    if (
+        not config.complexity_warmup
+        or config.generations == 1
+        or generation == config.generations - 1
+    ):
+        return config
+    progress = generation / (config.generations - 1)
+    if progress < 0.5:
+        max_depth = min(config.max_depth, max(config.init_depth_max, 4))
+        max_nodes = min(config.max_nodes, 31)
+    else:
+        max_depth = min(config.max_depth, max(config.init_depth_max, 6))
+        max_nodes = min(config.max_nodes, 63)
+    return replace(config, max_depth=max_depth, max_nodes=max_nodes)
 
 
 @dataclass(frozen=True)
@@ -124,8 +162,40 @@ def scored_sort_key(item: ScoredTree) -> tuple[float, int, str]:
     return (
         -item.fitness.selection_score,
         item.tree.node_count,
-        item.fitness.expression,
+        item.tree.to_expression(),
     )
+
+
+def frozen_expression(item: ScoredTree) -> str:
+    """Return the training-frozen, direction-aligned expression for a program."""
+
+    return item.fitness.frozen_expression or item.fitness.expression
+
+
+def _direction_normalized_scored_tree(
+    tree: ExpressionTree,
+    fitness: FitnessResult,
+) -> ScoredTree:
+    """Make the post-training, positive-IC tree the generation's genotype."""
+
+    return ScoredTree(
+        tree=canonicalize_tree(
+            apply_direction_multiplier(tree, fitness.direction_multiplier)
+        ),
+        fitness=fitness,
+    )
+
+
+def _unique_parent_pool(scored: tuple[ScoredTree, ...]) -> tuple[ScoredTree, ...]:
+    """Deduplicate sign-equivalent, direction-normalized candidates before selection."""
+
+    unique: dict[str, ScoredTree] = {}
+    for item in scored:
+        expression = item.tree.to_expression()
+        existing = unique.get(expression)
+        if existing is None or scored_sort_key(item) < scored_sort_key(existing):
+            unique[expression] = item
+    return tuple(sorted(unique.values(), key=scored_sort_key))
 
 
 def initial_population(
@@ -139,7 +209,7 @@ def initial_population(
     while len(result) < config.population_size and attempts < max_attempts:
         attempts += 1
         depth = int(rng.integers(config.init_depth_min, config.init_depth_max + 1))
-        tree = random_tree(
+        tree = canonicalize_tree(random_tree(
             rng,
             target_depth=depth,
             grow=bool(len(result) % 2),
@@ -148,7 +218,7 @@ def initial_population(
             windows=config.windows,
             exponents=config.exponents,
             constant_range=config.constant_range,
-        )
+        ))
         expression = tree.to_expression()
         if valid_tree(tree, max_depth=config.max_depth, max_nodes=config.max_nodes) and expression not in seen:
             seen.add(expression)
@@ -214,7 +284,10 @@ def evaluate_population(
             executor.shutdown(wait=True)
 
     return tuple(
-        ScoredTree(tree=tree, fitness=cache[tree.to_expression()])
+        _direction_normalized_scored_tree(
+            tree,
+            cache[tree.to_expression()],
+        )
         for tree in population
     )
 
@@ -276,11 +349,12 @@ def _valid_offspring(
     fallback: ExpressionTree,
     config: EvolutionConfig,
 ) -> ExpressionTree:
-    return (
-        candidate
-        if valid_tree(candidate, max_depth=config.max_depth, max_nodes=config.max_nodes)
-        else fallback
-    )
+    candidate = canonicalize_tree(candidate)
+    return candidate if valid_tree(
+        candidate,
+        max_depth=config.max_depth,
+        max_nodes=config.max_nodes,
+    ) else fallback
 
 
 def evolve_population(
@@ -288,9 +362,12 @@ def evolve_population(
     rng: np.random.Generator,
     config: EvolutionConfig,
 ) -> tuple[ExpressionTree, ...]:
-    """Create one duplicate-free generation using the paper's four operators."""
+    """Create one duplicate-free generation without an implicit copy channel."""
 
-    ranked = sorted(scored, key=scored_sort_key)
+    parent_pool = _unique_parent_pool(scored)
+    if not parent_pool:
+        raise ValueError("cannot evolve an empty scored population")
+    ranked = list(parent_pool)
     next_population: list[ExpressionTree] = [
         item.tree for item in ranked[: config.elite_size]
     ]
@@ -301,21 +378,26 @@ def evolve_population(
         [
             config.p_crossover,
             config.p_subtree_mutation,
-            config.p_hoist_mutation,
+            config.p_delete_mutation,
+            config.p_insert_mutation,
             config.p_point_mutation,
+            config.p_window_mutation,
+            config.p_constant_mutation,
+            config.p_hoist_mutation,
+            config.p_random_tree,
         ]
     )
     while len(next_population) < config.population_size and attempts < max_attempts:
         attempts += 1
         parent = tournament_select(
-            scored,
+            parent_pool,
             rng,
             tournament_size=config.tournament_size,
         )
         draw = float(rng.random())
         if draw < cutoffs[0]:
             donor = tournament_select(
-                scored,
+                parent_pool,
                 rng,
                 tournament_size=config.tournament_size,
             )
@@ -323,8 +405,16 @@ def evolve_population(
         elif draw < cutoffs[1]:
             child = _subtree_mutation(parent, rng, config)
         elif draw < cutoffs[2]:
-            child = _hoist_mutation(parent, rng)
+            child = delete_node(parent, rng)
         elif draw < cutoffs[3]:
+            child = insert_node(
+                parent,
+                rng,
+                functions=FUNCTION_SPECS,
+                windows=config.windows,
+                exponents=config.exponents,
+            )
+        elif draw < cutoffs[4]:
             child = point_mutation(
                 parent,
                 rng,
@@ -335,8 +425,28 @@ def evolve_population(
                 exponents=config.exponents,
                 constant_range=config.constant_range,
             )
+        elif draw < cutoffs[5]:
+            child = mutate_window(parent, rng, windows=config.windows)
+        elif draw < cutoffs[6]:
+            child = mutate_constant(
+                parent,
+                rng,
+                constant_range=config.constant_range,
+            )
+        elif draw < cutoffs[7]:
+            child = _hoist_mutation(parent, rng)
         else:
-            child = parent
+            depth = int(rng.integers(config.init_depth_min, config.init_depth_max + 1))
+            child = random_tree(
+                rng,
+                target_depth=depth,
+                grow=True,
+                terminals=config.terminals,
+                functions=FUNCTION_SPECS,
+                windows=config.windows,
+                exponents=config.exponents,
+                constant_range=config.constant_range,
+            )
         child = _valid_offspring(child, parent, config)
         expression = child.to_expression()
         if expression not in seen:
@@ -346,7 +456,7 @@ def evolve_population(
     while len(next_population) < config.population_size and attempts < max_attempts * 2:
         attempts += 1
         depth = int(rng.integers(config.init_depth_min, config.init_depth_max + 1))
-        child = random_tree(
+        child = canonicalize_tree(random_tree(
             rng,
             target_depth=depth,
             grow=True,
@@ -355,7 +465,7 @@ def evolve_population(
             windows=config.windows,
             exponents=config.exponents,
             constant_range=config.constant_range,
-        )
+        ))
         expression = child.to_expression()
         if valid_tree(child, max_depth=config.max_depth, max_nodes=config.max_nodes) and expression not in seen:
             seen.add(expression)
@@ -365,19 +475,114 @@ def evolve_population(
     return tuple(next_population)
 
 
+def aligned_ic_mean(item: ScoredTree) -> float:
+    value = item.fitness.aligned_ic_mean
+    if value is None and item.fitness.ic_mean is not None:
+        value = abs(float(item.fitness.ic_mean))
+    return float(value) if value is not None and np.isfinite(value) else -np.inf
+
+
+def dominates(left: ScoredTree, right: ScoredTree) -> bool:
+    """Return whether left is no worse in IC/complexity and better in one."""
+
+    left_ic = aligned_ic_mean(left)
+    right_ic = aligned_ic_mean(right)
+    return (
+        left_ic >= right_ic
+        and left.tree.node_count <= right.tree.node_count
+        and (
+            left_ic > right_ic
+            or left.tree.node_count < right.tree.node_count
+        )
+    )
+
+
+def _pareto_quality_key(item: ScoredTree) -> tuple[float, int, float, str]:
+    return (
+        -aligned_ic_mean(item),
+        item.tree.node_count,
+        -item.fitness.selection_score,
+        item.tree.to_expression(),
+    )
+
+
+def pareto_front(candidates: list[ScoredTree]) -> list[ScoredTree]:
+    """Deduplicate, retain the best candidate per size, then take the frontier."""
+
+    unique: dict[str, ScoredTree] = {}
+    for raw_item in candidates:
+        if not np.isfinite(aligned_ic_mean(raw_item)):
+            continue
+        tree = canonicalize_tree(raw_item.tree)
+        item = ScoredTree(tree=tree, fitness=raw_item.fitness)
+        expression = tree.to_expression()
+        existing = unique.get(expression)
+        if existing is None or _pareto_quality_key(item) < _pareto_quality_key(existing):
+            unique[expression] = item
+
+    best_by_size: dict[int, ScoredTree] = {}
+    for item in unique.values():
+        existing = best_by_size.get(item.tree.node_count)
+        if existing is None or _pareto_quality_key(item) < _pareto_quality_key(existing):
+            best_by_size[item.tree.node_count] = item
+    candidates_by_size = sorted(
+        best_by_size.values(),
+        key=lambda item: (item.tree.node_count, -aligned_ic_mean(item), item.tree.to_expression()),
+    )
+    return [
+        item
+        for item in candidates_by_size
+        if not any(
+            other is not item and dominates(other, item)
+            for other in candidates_by_size
+        )
+    ]
+
+
+def _complexity_coverage_prune(
+    candidates: list[ScoredTree],
+    limit: int,
+) -> list[ScoredTree]:
+    """Keep the strongest expression and spread remaining slots across sizes."""
+
+    if limit < 1:
+        return []
+    ordered = sorted(
+        candidates,
+        key=lambda item: (item.tree.node_count, -aligned_ic_mean(item), item.tree.to_expression()),
+    )
+    if len(ordered) <= limit:
+        return ordered
+    strongest = min(ordered, key=_pareto_quality_key)
+    selected: dict[str, ScoredTree] = {
+        strongest.tree.to_expression(): strongest
+    }
+    for raw_index in np.linspace(0, len(ordered) - 1, num=limit):
+        item = ordered[int(round(float(raw_index)))]
+        selected.setdefault(item.tree.to_expression(), item)
+        if len(selected) == limit:
+            break
+    if len(selected) < limit:
+        for item in sorted(ordered, key=_pareto_quality_key):
+            selected.setdefault(item.tree.to_expression(), item)
+            if len(selected) == limit:
+                break
+    return sorted(
+        selected.values(),
+        key=lambda item: (item.tree.node_count, -aligned_ic_mean(item), item.tree.to_expression()),
+    )
+
+
 def update_hall_of_fame(
     hall: MutableMapping[str, ScoredTree],
     scored: tuple[ScoredTree, ...],
     *,
     limit: int,
 ) -> None:
-    for item in scored:
-        existing = hall.get(item.fitness.expression)
-        if existing is None or scored_sort_key(item) < scored_sort_key(existing):
-            hall[item.fitness.expression] = item
-    ranked = sorted(hall.values(), key=scored_sort_key)
+    front = pareto_front([*hall.values(), *scored])
+    retained = _complexity_coverage_prune(front, limit)
     hall.clear()
-    hall.update((item.fitness.expression, item) for item in ranked[:limit])
+    hall.update((item.tree.to_expression(), item) for item in retained)
 
 
 def select_top_components(
@@ -392,18 +597,21 @@ def select_top_components(
     library's correlation gate.
     """
 
-    ranked = [
-        item
-        for item in sorted(hall.values(), key=scored_sort_key)
-        if np.isfinite(item.fitness.selection_score)
-    ]
-    selected = tuple(ranked[: config.n_components])
+    front = pareto_front(list(hall.values()))
+    selected_items = _complexity_coverage_prune(front, config.n_components)
+    selected = tuple(sorted(selected_items, key=_pareto_quality_key))
     audit = [
         {
             "rank": rank,
-            "expression": item.fitness.expression,
+            "expression": frozen_expression(item),
+            "raw_expression": item.fitness.expression,
+            "direction_multiplier": item.fitness.direction_multiplier,
+            "training_ic_mean": item.fitness.ic_mean,
+            "aligned_ic_mean": item.fitness.aligned_ic_mean,
+            "node_count": item.tree.node_count,
             "adjusted_fitness": item.fitness.adjusted_fitness,
             "selection_score": item.fitness.selection_score,
+            "pareto_front": True,
             "selected_for_frozen_test": True,
         }
         for rank, item in enumerate(selected, start=1)

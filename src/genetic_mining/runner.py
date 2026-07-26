@@ -26,8 +26,10 @@ from evaluation_standards import (
 from .evolution import (
     EvolutionConfig,
     ScoredTree,
+    active_limits,
     evaluate_population,
     evolve_population,
+    frozen_expression,
     initial_population,
     select_top_components,
     scored_sort_key,
@@ -74,7 +76,10 @@ def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-TEST_SCREENING_PROTOCOL = "profitability_then_ic_joint_neutral_v3_factor_library_handoff"
+TEST_SCREENING_PROTOCOL = (
+    "profitability_then_ic_joint_neutral_v6_direction_normalized_"
+    "pareto_hof_mutation_warmup_factor_library_handoff"
+)
 
 
 @dataclass(frozen=True)
@@ -289,13 +294,19 @@ class GeneticMiningRunner:
 
     def _new_cycle(self, cycle: int) -> dict[str, Any]:
         rng = np.random.default_rng(self.config.seed + cycle - 1)
-        population = initial_population(rng, self.config.evolution)
+        generation_config = active_limits(self.config.evolution, 0)
+        population = initial_population(rng, generation_config)
         checkpoint = {
             "cycle": cycle,
             "stage": "evolution",
+            "search_protocol": TEST_SCREENING_PROTOCOL,
             "next_generation": 0,
             "population": [tree.to_dict() for tree in population],
             "hall_of_fame": [],
+            "active_limits": {
+                "max_depth": generation_config.max_depth,
+                "max_nodes": generation_config.max_nodes,
+            },
             "rng_state": rng.bit_generator.state,
             "started_at": _now(),
         }
@@ -314,6 +325,8 @@ class GeneticMiningRunner:
         self,
         generation: int,
         scored: tuple[ScoredTree, ...],
+        generation_config: EvolutionConfig,
+        hall: Mapping[str, ScoredTree],
     ) -> dict[str, Any]:
         valid = [item for item in scored if np.isfinite(item.fitness.selection_score)]
         ranked = sorted(scored, key=scored_sort_key)
@@ -330,6 +343,9 @@ class GeneticMiningRunner:
             "mean_node_count": float(
                 np.mean([item.tree.node_count for item in scored])
             ),
+            "active_max_depth": generation_config.max_depth,
+            "active_max_nodes": generation_config.max_nodes,
+            "pareto_hall_of_fame_size": len(hall),
             "completed_at": _now(),
         }
 
@@ -343,16 +359,18 @@ class GeneticMiningRunner:
         population = tuple(
             ExpressionTree.from_dict(item) for item in checkpoint["population"]
         )
-        hall = {
-            item["fitness"]["expression"]: ScoredTree.from_dict(item)
+        hall_entries = tuple(
+            ScoredTree.from_dict(item)
             for item in checkpoint.get("hall_of_fame", [])
-        }
+        )
+        hall = {item.tree.to_expression(): item for item in hall_entries}
         start_generation = int(checkpoint["next_generation"])
         for generation in range(start_generation, self.config.evolution.generations):
+            generation_config = active_limits(self.config.evolution, generation)
             scored = evaluate_population(
                 population,
                 self.fitness_context,
-                self.config.evolution,
+                generation_config,
                 self.fitness_cache,
                 on_result=self._append_fitness,
                 backend=self.fitness_backend,
@@ -362,7 +380,12 @@ class GeneticMiningRunner:
                 scored,
                 limit=self.config.evolution.hall_of_fame,
             )
-            generation_summary = self._generation_summary(generation, scored)
+            generation_summary = self._generation_summary(
+                generation,
+                scored,
+                generation_config,
+                hall,
+            )
             _atomic_json(
                 self._cycle_dir(cycle)
                 / "generations"
@@ -370,7 +393,11 @@ class GeneticMiningRunner:
                 generation_summary,
             )
             if generation + 1 < self.config.evolution.generations:
-                population = evolve_population(scored, rng, self.config.evolution)
+                next_generation_config = active_limits(
+                    self.config.evolution,
+                    generation + 1,
+                )
+                population = evolve_population(scored, rng, next_generation_config)
                 checkpoint = {
                     **checkpoint,
                     "next_generation": generation + 1,
@@ -379,6 +406,10 @@ class GeneticMiningRunner:
                         item.as_dict()
                         for item in sorted(hall.values(), key=scored_sort_key)
                     ],
+                    "active_limits": {
+                        "max_depth": next_generation_config.max_depth,
+                        "max_nodes": next_generation_config.max_nodes,
+                    },
                     "rng_state": rng.bit_generator.state,
                     "updated_at": _now(),
                 }
@@ -417,10 +448,11 @@ class GeneticMiningRunner:
     ) -> list[dict[str, Any]]:
         records: list[dict[str, Any]] = []
         for rank, component in enumerate(components, start=1):
+            expression = frozen_expression(component)
             name = self._candidate_name(
                 cycle,
                 rank,
-                component.fitness.expression,
+                expression,
             )
             candidate_dir = self._cycle_dir(cycle) / "candidates" / name
             result_path = candidate_dir / "candidate_result.json"
@@ -430,7 +462,7 @@ class GeneticMiningRunner:
             try:
                 profitability = evaluate_factor_standards(
                     factor_name=name,
-                    expression=component.fitness.expression,
+                    expression=expression,
                     data_dir=self.config.data_dir,
                     output_dir=candidate_dir / "test_evaluation" / "profitability",
                     signal_start=self.config.test_start,
@@ -449,7 +481,7 @@ class GeneticMiningRunner:
                 if profitability_passed:
                     ic = evaluate_factor_standards(
                         factor_name=name,
-                        expression=component.fitness.expression,
+                        expression=expression,
                         data_dir=self.config.data_dir,
                         output_dir=candidate_dir / "test_evaluation" / "ic",
                         signal_start=self.config.test_start,
@@ -465,7 +497,9 @@ class GeneticMiningRunner:
                 test_overall_passed = profitability_passed and ic_passed
                 record = {
                     "factor_name": name,
-                    "expression": component.fitness.expression,
+                    "expression": expression,
+                    "raw_expression": component.fitness.expression,
+                    "direction_multiplier": component.fitness.direction_multiplier,
                     "training_fitness": component.fitness.as_dict(),
                     "testing_protocol": TEST_SCREENING_PROTOCOL,
                     "profitability_passed": profitability_passed,
@@ -485,24 +519,51 @@ class GeneticMiningRunner:
                     "completed_at": _now(),
                 }
                 if test_overall_passed:
+                    profitability_standard = profitability["standards"].get(
+                        PROFITABILITY_STANDARD_NAME,
+                        {},
+                    )
+                    profitability_evaluation = (
+                        {
+                            "standard": PROFITABILITY_STANDARD_NAME,
+                            "methods": profitability_standard.get("methods"),
+                            "metrics": profitability_standard.get("metrics"),
+                            "horizon": profitability.get("horizon"),
+                            "n_quantiles": profitability.get("n_quantiles"),
+                            "signal_start": profitability.get("signal_start"),
+                            "signal_end": profitability.get("signal_end"),
+                        }
+                        if isinstance(profitability_standard, Mapping)
+                        and isinstance(profitability_standard.get("metrics"), Mapping)
+                        else None
+                    )
                     _atomic_json(
                         candidate_dir / "factor_library_submission_request.json",
                         {
                             "schema_version": 1,
                             "factor_name": name,
-                            "expression": component.fitness.expression,
+                            "expression": expression,
+                            "raw_expression": component.fitness.expression,
+                            "direction_multiplier": component.fitness.direction_multiplier,
                             "project": "遗传规划",
                             "source_campaign": self.config.campaign,
                             "source_cycle": cycle,
                             "source_candidate": name,
                             "testing_protocol": TEST_SCREENING_PROTOCOL,
                             "requested_at": record["completed_at"],
+                            **(
+                                {"profitability_evaluation": profitability_evaluation}
+                                if profitability_evaluation is not None
+                                else {}
+                            ),
                         },
                     )
             except Exception as exc:
                 record = {
                     "factor_name": name,
-                    "expression": component.fitness.expression,
+                    "expression": expression,
+                    "raw_expression": component.fitness.expression,
+                    "direction_multiplier": component.fitness.direction_multiplier,
                     "training_fitness": component.fitness.as_dict(),
                     "testing_protocol": TEST_SCREENING_PROTOCOL,
                     "profitability_passed": False,
@@ -538,6 +599,7 @@ class GeneticMiningRunner:
             "cycle": cycle,
             "status": "completed",
             "completed_at": _now(),
+            "search_protocol": TEST_SCREENING_PROTOCOL,
             "fitness_contract": fitness_contract(self.fitness_context),
             "fitness_backend": (
                 self.fitness_backend.metadata
