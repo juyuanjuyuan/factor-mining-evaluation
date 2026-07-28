@@ -250,7 +250,7 @@ function CampaignCard({ campaign }: { campaign: GeneticCampaign }) {
               <>
                 <Descriptions size="small" column={{ xs: 1, sm: 2, md: 3 }}>
                   <Descriptions.Item label="种群/代数">{campaign.config.population_size} / {campaign.config.generations}</Descriptions.Item>
-                  <Descriptions.Item label="冻结测试候选（训练 fitness 前 N）">{campaign.config.components}</Descriptions.Item>
+                  <Descriptions.Item label="冻结测试候选（Pareto 多层排序前 N）">{campaign.config.components}</Descriptions.Item>
                   <Descriptions.Item label="预处理">{preprocessLabel[campaign.config.preprocess_mode] || campaign.config.preprocess_mode}</Descriptions.Item>
                   <Descriptions.Item label="训练后端">{campaign.config.compute_backend === 'mps' ? 'MPS / Apple GPU' : 'CPU'}</Descriptions.Item>
                   <Descriptions.Item label="CPU 线程">{campaign.config.n_jobs}</Descriptions.Item>
@@ -315,7 +315,7 @@ export function GeneticMiningPanel({ open, onOpen, onClose }: { open: boolean; o
   const create = useMutation({
     mutationFn: (values: GeneticCampaignInput) => api.createGeneticCampaign({
       ...values,
-      // The current GP protocol freezes at most N candidates from the Pareto HOF.
+      // The current GP protocol freezes up to N candidates from the Pareto-ranked HOF.
       // Keep the archive/test caps aligned instead of exposing two copies of N.
       components: values.hall_of_fame,
       max_cycles: values.continuous ? values.max_cycles || null : null,
@@ -386,7 +386,7 @@ export function GeneticMiningPanel({ open, onOpen, onClose }: { open: boolean; o
           type="info"
           showIcon
           message="冻结训练/测试边界"
-          description="训练集只用于表达式进化、规范化去重和 Pareto HOF；父代锦标赛仍使用 IC 减复杂度惩罚。冻结后的表达式先用市值+行业中性化后的净分组收益筛选；仅盈利存活者再做测试集 IC 检测。两关均通过后会自动交接给因子库；若相关性冲突，因子库以同口径的 60 日窗口 Sharpe 中位数优先、同分再以 Fitness 比较，只有严格更优的候选才能替换旧正式因子，旧定义保留在测试库。"
+          description="训练集只用于表达式进化、规范化去重和多层 Pareto HOF 排名；第一前沿优先，随后依次使用后续前沿补足冻结候选。父代锦标赛仍使用 IC 减复杂度惩罚。冻结后的表达式先用市值+行业中性化后的净分组收益筛选；仅盈利存活者再做测试集 IC 检测。两关均通过后会自动交接给因子库；若相关性冲突，因子库以同口径的 60 日窗口 Sharpe 中位数优先、同分再以 Fitness 比较，只有严格更优的候选才能替换旧正式因子，旧定义保留在测试库。"
         />
         {active && (
           <Alert
@@ -478,10 +478,10 @@ export function GeneticMiningPanel({ open, onOpen, onClose }: { open: boolean; o
                       <InputNumber min={1} max={100} />
                     </Form.Item>
                     <Form.Item
-                      label="Pareto HOF / 冻结测试候选上限"
+                      label="Pareto HOF / 冻结测试候选数"
                       name="hall_of_fame"
                       rules={[{ required: true }]}
-                      extra="跨代按同向训练 IC 与节点数维护 Pareto 前沿，再按复杂度覆盖冻结最多 N 个候选；前沿不足 N 时不会用被支配表达式补满。"
+                      extra="跨代按同向训练 IC 与节点数执行多层 Pareto 排名；第一前沿不足 N 时依次从后续前沿补足，只有有效且唯一表达式不足时才少于 N。"
                     >
                       <InputNumber min={1} max={500} />
                     </Form.Item>

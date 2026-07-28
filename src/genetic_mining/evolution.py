@@ -506,9 +506,9 @@ def _pareto_quality_key(item: ScoredTree) -> tuple[float, int, float, str]:
     )
 
 
-def pareto_front(candidates: list[ScoredTree]) -> list[ScoredTree]:
-    """Deduplicate, retain the best candidate per size, then take the frontier."""
-
+def _canonical_unique_candidates(
+    candidates: list[ScoredTree],
+) -> dict[str, ScoredTree]:
     unique: dict[str, ScoredTree] = {}
     for raw_item in candidates:
         if not np.isfinite(aligned_ic_mean(raw_item)):
@@ -519,24 +519,55 @@ def pareto_front(candidates: list[ScoredTree]) -> list[ScoredTree]:
         existing = unique.get(expression)
         if existing is None or _pareto_quality_key(item) < _pareto_quality_key(existing):
             unique[expression] = item
+    return unique
 
-    best_by_size: dict[int, ScoredTree] = {}
-    for item in unique.values():
-        existing = best_by_size.get(item.tree.node_count)
-        if existing is None or _pareto_quality_key(item) < _pareto_quality_key(existing):
-            best_by_size[item.tree.node_count] = item
-    candidates_by_size = sorted(
-        best_by_size.values(),
-        key=lambda item: (item.tree.node_count, -aligned_ic_mean(item), item.tree.to_expression()),
+
+def pareto_front(candidates: list[ScoredTree]) -> list[ScoredTree]:
+    """Return the first IC/complexity Pareto front after canonical deduplication."""
+
+    unique = _canonical_unique_candidates(candidates)
+    ordered = sorted(
+        unique.values(),
+        key=lambda item: (
+            item.tree.node_count,
+            -aligned_ic_mean(item),
+            item.tree.to_expression(),
+        ),
     )
-    return [
-        item
-        for item in candidates_by_size
-        if not any(
-            other is not item and dominates(other, item)
-            for other in candidates_by_size
+    front: list[ScoredTree] = []
+    best_ic_at_smaller_size = -np.inf
+    start = 0
+    while start < len(ordered):
+        node_count = ordered[start].tree.node_count
+        stop = start + 1
+        while stop < len(ordered) and ordered[stop].tree.node_count == node_count:
+            stop += 1
+        same_size = ordered[start:stop]
+        best_ic_at_size = max(aligned_ic_mean(item) for item in same_size)
+        front.extend(
+            item
+            for item in same_size
+            if aligned_ic_mean(item) == best_ic_at_size
+            and best_ic_at_smaller_size < aligned_ic_mean(item)
         )
-    ]
+        best_ic_at_smaller_size = max(best_ic_at_smaller_size, best_ic_at_size)
+        start = stop
+    return front
+
+
+def pareto_fronts(candidates: list[ScoredTree]) -> list[list[ScoredTree]]:
+    """Partition valid unique programs into successive Pareto fronts."""
+
+    remaining = _canonical_unique_candidates(candidates)
+    fronts: list[list[ScoredTree]] = []
+    while remaining:
+        front = pareto_front(list(remaining.values()))
+        if not front:
+            raise RuntimeError("Pareto ranking could not make progress")
+        fronts.append(front)
+        for item in front:
+            remaining.pop(item.tree.to_expression(), None)
+    return fronts
 
 
 def _complexity_coverage_prune(
@@ -573,14 +604,46 @@ def _complexity_coverage_prune(
     )
 
 
+def _select_pareto_ranked(
+    candidates: list[ScoredTree],
+    limit: int,
+) -> tuple[list[ScoredTree], dict[str, int]]:
+    """Fill an archive from successive Pareto fronts up to ``limit``."""
+
+    if limit < 1:
+        return [], {}
+    remaining = _canonical_unique_candidates(candidates)
+    selected: list[ScoredTree] = []
+    pareto_ranks: dict[str, int] = {}
+    pareto_rank = 0
+    while remaining and len(selected) < limit:
+        pareto_rank += 1
+        front = pareto_front(list(remaining.values()))
+        if not front:
+            raise RuntimeError("Pareto ranking could not make progress")
+        remaining_slots = limit - len(selected)
+        chosen = (
+            front
+            if len(front) <= remaining_slots
+            else _complexity_coverage_prune(front, remaining_slots)
+        )
+        chosen = sorted(chosen, key=_pareto_quality_key)
+        selected.extend(chosen)
+        pareto_ranks.update(
+            (item.tree.to_expression(), pareto_rank) for item in chosen
+        )
+        for item in front:
+            remaining.pop(item.tree.to_expression(), None)
+    return selected, pareto_ranks
+
+
 def update_hall_of_fame(
     hall: MutableMapping[str, ScoredTree],
     scored: tuple[ScoredTree, ...],
     *,
     limit: int,
 ) -> None:
-    front = pareto_front([*hall.values(), *scored])
-    retained = _complexity_coverage_prune(front, limit)
+    retained, _ = _select_pareto_ranked([*hall.values(), *scored], limit)
     hall.clear()
     hall.update((item.tree.to_expression(), item) for item in retained)
 
@@ -589,7 +652,7 @@ def select_top_components(
     hall: Mapping[str, ScoredTree],
     config: EvolutionConfig,
 ) -> tuple[tuple[ScoredTree, ...], list[dict[str, Any]]]:
-    """Freeze the highest-fitness HOF programs for independent test evaluation.
+    """Freeze the Pareto-ranked HOF programs for independent test evaluation.
 
     Diversity is enforced only by formal-library admission.  A training-only
     pairwise HOF filter can discard a candidate merely because it resembles a
@@ -597,9 +660,19 @@ def select_top_components(
     library's correlation gate.
     """
 
-    front = pareto_front(list(hall.values()))
-    selected_items = _complexity_coverage_prune(front, config.n_components)
-    selected = tuple(sorted(selected_items, key=_pareto_quality_key))
+    selected_items, pareto_ranks = _select_pareto_ranked(
+        list(hall.values()),
+        config.n_components,
+    )
+    selected = tuple(
+        sorted(
+            selected_items,
+            key=lambda item: (
+                pareto_ranks[item.tree.to_expression()],
+                *_pareto_quality_key(item),
+            ),
+        )
+    )
     audit = [
         {
             "rank": rank,
@@ -611,7 +684,8 @@ def select_top_components(
             "node_count": item.tree.node_count,
             "adjusted_fitness": item.fitness.adjusted_fitness,
             "selection_score": item.fitness.selection_score,
-            "pareto_front": True,
+            "pareto_rank": pareto_ranks[item.tree.to_expression()],
+            "pareto_front": pareto_ranks[item.tree.to_expression()] == 1,
             "selected_for_frozen_test": True,
         }
         for rank, item in enumerate(selected, start=1)
