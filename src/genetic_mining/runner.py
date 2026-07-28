@@ -77,8 +77,8 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 TEST_SCREENING_PROTOCOL = (
-    "profitability_then_ic_joint_neutral_v6_direction_normalized_"
-    "pareto_hof_mutation_warmup_factor_library_handoff"
+    "profitability_then_ic_joint_neutral_v7_direction_normalized_"
+    "pareto_ranked_hof_mutation_warmup_factor_library_handoff"
 )
 
 

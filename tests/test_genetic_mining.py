@@ -24,6 +24,7 @@ from genetic_mining.evolution import (
     evolve_population,
     initial_population,
     pareto_front,
+    pareto_fronts,
     select_top_components,
     tournament_select,
     update_hall_of_fame,
@@ -217,6 +218,66 @@ def test_pareto_hall_of_fame_and_complexity_stratified_selection() -> None:
     assert [item["node_count"] for item in audit] == [4, 2, 1]
     assert all(item["pareto_front"] for item in audit)
     assert all(item["selected_for_frozen_test"] for item in audit)
+
+
+def test_pareto_hall_of_fame_fills_from_successive_fronts() -> None:
+    config = EvolutionConfig(
+        generations=1,
+        population_size=4,
+        hall_of_fame=4,
+        n_components=3,
+        tournament_size=2,
+    )
+    candidates = tuple(
+        _scored_tree(ExpressionTree("terminal", name), score)
+        for name, score in (
+            ("c", 0.04),
+            ("o", 0.03),
+            ("h", 0.02),
+            ("l", 0.01),
+        )
+    )
+
+    fronts = pareto_fronts(list(candidates))
+    assert [
+        [item.tree.to_expression() for item in front]
+        for front in fronts
+    ] == [["c"], ["o"], ["h"], ["l"]]
+
+    hall: dict[str, ScoredTree] = {}
+    update_hall_of_fame(hall, candidates, limit=config.hall_of_fame)
+    selected, audit = select_top_components(hall, config)
+
+    assert len(hall) == config.hall_of_fame
+    assert [item.tree.to_expression() for item in selected] == ["c", "o", "h"]
+    assert [item["pareto_rank"] for item in audit] == [1, 2, 3]
+    assert [item["pareto_front"] for item in audit] == [True, False, False]
+
+
+def test_pareto_hall_of_fame_freezes_one_hundred_when_available() -> None:
+    config = EvolutionConfig(
+        generations=1,
+        population_size=120,
+        hall_of_fame=100,
+        n_components=100,
+        tournament_size=20,
+    )
+    candidates = tuple(
+        _scored_tree(
+            ExpressionTree("terminal", f"synthetic_{index:03d}"),
+            0.20 - index * 0.001,
+        )
+        for index in range(120)
+    )
+
+    hall: dict[str, ScoredTree] = {}
+    update_hall_of_fame(hall, candidates, limit=config.hall_of_fame)
+    selected, audit = select_top_components(hall, config)
+
+    assert len(hall) == 100
+    assert len(selected) == 100
+    assert len(audit) == 100
+    assert [item["pareto_rank"] for item in audit] == list(range(1, 101))
 
 
 def test_safe_tree_canonicalization_and_single_site_mutations() -> None:
@@ -576,13 +637,15 @@ def test_three_generation_runner_persists_warmup_and_pareto_state() -> None:
             ScoredTree.from_dict(item)
             for item in checkpoint["hall_of_fame"]
         ]
-        assert all(
-            not dominates(other, item)
-            for item in hall
-            for other in hall
-            if other is not item
+        assert len(hall) == config.evolution.hall_of_fame
+        assert len(checkpoint["selection_audit"]) == config.evolution.n_components
+        assert [item["pareto_rank"] for item in checkpoint["selection_audit"]] == sorted(
+            item["pareto_rank"] for item in checkpoint["selection_audit"]
         )
-        assert all(item["pareto_front"] for item in checkpoint["selection_audit"])
+        assert all(
+            item["pareto_front"] == (item["pareto_rank"] == 1)
+            for item in checkpoint["selection_audit"]
+        )
         assert summary["search_protocol"] == config.test_screening_protocol
 
 
@@ -735,6 +798,8 @@ def test_correlation_gated_library_admission() -> None:
 def main() -> None:
     test_expression_trees_and_evolution()
     test_pareto_hall_of_fame_and_complexity_stratified_selection()
+    test_pareto_hall_of_fame_fills_from_successive_fronts()
+    test_pareto_hall_of_fame_freezes_one_hundred_when_available()
     test_safe_tree_canonicalization_and_single_site_mutations()
     test_complexity_warmup_opens_full_limits_only_for_final_generation()
     test_training_fitness_cannot_see_test_returns()
