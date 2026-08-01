@@ -37,6 +37,9 @@ class EvaluationContext:
     # causality diagnostics use this matrix to locate their checkpoints in
     # the original timeline.
     source_factor: pd.DataFrame | None = None
+    # Run-level post-expression linear smoothing. It is fixed before any
+    # evaluator begins, so every direct factor consumer sees the same score.
+    decay: int = 1
 
 
 def versioned_key(name: str, version: int) -> str:

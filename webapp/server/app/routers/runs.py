@@ -4,15 +4,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from market_cycles import market_cycle_backgrounds
 
 from ..db import Database
+from ..sanitize import sanitize
 from ..models import CompareRequest
+from ..services.holding_reference_data import HoldingReferenceData
 from ..services.run_reader import RunReader
-from .dependencies import get_db, get_reader
+from .dependencies import get_db, get_holding_reference_data, get_reader
 
 router = APIRouter(tags=["runs"])
 
@@ -73,6 +77,115 @@ def get_detail(
         return reader.get_detail(run, name)
     except (KeyError, FileNotFoundError, ValueError) as exc:
         raise HTTPException(404, f"明细不存在: {name}") from exc
+
+
+def _holding_audit_summary_name(reader: RunReader, run: dict) -> str:
+    name = reader.latest_detail_name(
+        reader.detail_names(run), "holding_audit_summary"
+    )
+    if name is None or reader.latest_artifact_name(run, "holding_audit") is None:
+        raise KeyError("holding_audit")
+    return name
+
+
+@router.get("/runs/{run_id}/holding-audit/dates")
+def list_holding_audit_dates(
+    run_id: str,
+    db: Database = Depends(get_db),
+    reader: RunReader = Depends(get_reader),
+) -> dict:
+    """Return the small per-day index for an optional holdings-audit artifact."""
+
+    run = db.get_run(run_id)
+    if not run:
+        raise HTTPException(404, "结果不存在")
+    try:
+        summary = reader.get_detail(run, _holding_audit_summary_name(reader, run))
+    except (KeyError, FileNotFoundError, ValueError) as exc:
+        raise HTTPException(404, "该运行未启用查看仓单模块") from exc
+    columns = summary["columns"]
+    dates = [
+        {
+            "signal_day": day,
+            **{
+                column: row[position] if position < len(row) else None
+                for position, column in enumerate(columns)
+            },
+        }
+        for day, row in zip(summary["index"], summary["data"])
+    ]
+    return {
+        "top_group": f"G{run['n_quantiles']}",
+        "dates": dates,
+    }
+
+
+@router.get("/runs/{run_id}/holding-audit")
+def get_holding_audit(
+    run_id: str,
+    signal_day: str,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=100, ge=1, le=500),
+    db: Database = Depends(get_db),
+    reader: RunReader = Depends(get_reader),
+    reference_data: HoldingReferenceData = Depends(get_holding_reference_data),
+) -> dict:
+    """Read one signal day's highest-quantile positions without full preload."""
+
+    run = db.get_run(run_id)
+    if not run:
+        raise HTTPException(404, "结果不存在")
+    try:
+        normalized_day = pd.Timestamp(signal_day).date().isoformat()
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(422, "signal_day 必须是 YYYY-MM-DD") from exc
+    try:
+        summary_name = _holding_audit_summary_name(reader, run)
+        artifact_name = reader.latest_artifact_name(run, "holding_audit")
+        if artifact_name is None:  # defensive: checked by _holding_audit_summary_name
+            raise KeyError("holding_audit")
+        artifact_path = reader.artifact_path(run, artifact_name)
+        summary = reader.get_detail(run, summary_name)
+    except (KeyError, FileNotFoundError, ValueError) as exc:
+        raise HTTPException(404, "该运行未启用查看仓单模块") from exc
+
+    summary_by_day = {
+        day: {
+            column: row[position] if position < len(row) else None
+            for position, column in enumerate(summary["columns"])
+        }
+        for day, row in zip(summary["index"], summary["data"])
+    }
+    if normalized_day not in summary_by_day:
+        raise HTTPException(404, "该信号日没有可审计的最高分位持仓")
+
+    try:
+        frame = pd.read_parquet(
+            artifact_path,
+            filters=[("signal_day", "=", normalized_day)],
+        )
+    except (OSError, ValueError) as exc:
+        raise HTTPException(500, "仓单产物无法读取") from exc
+    if frame.empty:
+        raise HTTPException(404, "该信号日没有可审计的最高分位持仓")
+    frame = frame.sort_values("rank_in_top_group", kind="stable")
+    total = len(frame)
+    offset = (page - 1) * page_size
+    page_frame = reference_data.enrich(frame.iloc[offset : offset + page_size])
+    rows = sanitize(page_frame.to_dict(orient="records"))
+    first = frame.iloc[0]
+    return {
+        "signal_day": normalized_day,
+        "entry_day": sanitize(first["entry_day"]),
+        "exit_day": sanitize(first["exit_day"]),
+        "top_group": f"G{run['n_quantiles']}",
+        "summary": sanitize(summary_by_day[normalized_day]),
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "reference_data": reference_data.metadata(),
+        "rows": rows,
+    }
 
 
 @router.get("/runs/{run_id}/artifacts/{name}")

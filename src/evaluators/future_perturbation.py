@@ -174,6 +174,7 @@ def evaluate_future_data_perturbation(state: EvaluationState) -> None:
             "Future-data perturbation requires expression and market_data in context"
         )
     from engine import evaluate_expression
+    from transforms.linear_decay import apply_linear_decay
 
     expression = state.context.expression
     source_factor = (
@@ -198,10 +199,11 @@ def evaluate_future_data_perturbation(state: EvaluationState) -> None:
         # EvaluationContext. Apply the identical normalization here; otherwise
         # a stable +/-inf is compared with the original NaN and is falsely
         # reported as a future-data change.
-        return evaluate_expression(expression, perturbed).replace(
+        raw_factor = evaluate_expression(expression, perturbed).replace(
             [np.inf, -np.inf],
             np.nan,
         )
+        return apply_linear_decay(raw_factor, state.context.decay)
 
     detail, summary = future_data_perturbation_test(
         source_factor,

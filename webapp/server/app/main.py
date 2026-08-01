@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from .config import settings
 from .db import Database
 from .routers import catalog, genetic_campaigns, jobs, model_tests, runs, templates
+from .services.holding_reference_data import HoldingReferenceData
 from .services.registry_service import RegistryService
 from .services.run_reader import RunReader
 from .worker.supervisor import WorkerSupervisor
@@ -27,6 +28,7 @@ async def lifespan(app: FastAPI):
     app.state.db = db
     app.state.registry = RegistryService(settings, db)
     app.state.reader = RunReader()
+    app.state.holding_reference_data = HoldingReferenceData(settings.data_dir)
     supervisor = None
     if os.getenv("FACTOR_WEBAPP_DISABLE_WORKER", "").lower() not in {"1", "true", "yes"}:
         supervisor = WorkerSupervisor(db, settings)

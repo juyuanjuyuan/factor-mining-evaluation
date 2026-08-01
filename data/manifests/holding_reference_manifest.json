@@ -1,0 +1,18 @@
+{
+  "generated_at": "2026-07-31T15:56:44+08:00",
+  "security_reference": {
+    "path": "/Users/huangjuyuan/Desktop/因子挖掘:评价/data/security_name_reference.parquet",
+    "rows": 6085,
+    "market_code_coverage": 5538,
+    "name_observed_at": "2026-07-10",
+    "name_basis": "current_or_last_known_master_name",
+    "source": "/Users/huangjuyuan/Desktop/database_summerintern/outputs/data_update_retry/security_master.parquet",
+    "historical_name_warning": "Names are current or last-known master names, not a complete point-in-time rename history."
+  },
+  "industry_reference": {
+    "path": "/Users/huangjuyuan/Desktop/因子挖掘:评价/data/industry_l1_name_reference.parquet",
+    "rows": 30,
+    "classification_system": "中信一级行业（ZX）",
+    "source": "/Users/huangjuyuan/Desktop/因子挖掘:评价/data/行业数据.parquet"
+  }
+}

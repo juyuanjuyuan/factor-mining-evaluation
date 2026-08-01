@@ -24,6 +24,7 @@ def _validate(payload: TemplateInput) -> dict:
         params = dict(data.get("params") or {})
         horizon = params.get("horizon", 1)
         n_quantiles = params.get("n_quantiles", 10)
+        decay = params.get("decay", 1)
         significance_level = params.get("significance_level", 0.05)
         if (
             isinstance(horizon, bool)
@@ -38,6 +39,12 @@ def _validate(payload: TemplateInput) -> dict:
         ):
             raise HTTPException(422, "漏斗模板分位组数必须是 2–20 的整数")
         if (
+            isinstance(decay, bool)
+            or not isinstance(decay, int)
+            or decay < 1
+        ):
+            raise HTTPException(422, "漏斗模板 Decay 必须是正整数")
+        if (
             isinstance(significance_level, bool)
             or not isinstance(significance_level, (int, float))
             or not 0 < float(significance_level) < 1
@@ -50,6 +57,7 @@ def _validate(payload: TemplateInput) -> dict:
         data["params"] = {
             "horizon": horizon,
             "n_quantiles": n_quantiles,
+            "decay": decay,
             "significance_level": float(significance_level),
             "stages": stages,
         }

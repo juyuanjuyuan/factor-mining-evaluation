@@ -37,6 +37,21 @@ def write_minimal_market_data(data_dir: Path) -> None:
         columns=columns,
     )
     volume.to_parquet(data_dir / "volume_df.pq")
+    pd.DataFrame(
+        {
+            "security_code": columns,
+            "security_name": [f"测试公司{code}" for code in columns],
+            "name_basis": "current_or_last_known_master_name",
+            "name_observed_at": pd.Timestamp("2024-06-24"),
+        }
+    ).to_parquet(data_dir / "security_name_reference.parquet", index=False)
+    pd.DataFrame(
+        {
+            "industry_l1_code": ["01031701", "01031702"],
+            "industry_l1_name": ["石油石化", "煤炭"],
+            "classification_system": "中信一级行业（ZX）",
+        }
+    ).to_parquet(data_dir / "industry_l1_name_reference.parquet", index=False)
 
 
 def write_alpha_registry(registry_dir: Path) -> None:
@@ -87,6 +102,7 @@ def main() -> None:
         from app.db import Database
         from app.main import app
         from app.services.funnel_service import default_funnel_stages, first_funnel_run
+        from app.services.holding_reference_data import HoldingReferenceData
         from app.services.registry_service import RegistryService
         from app.worker.supervisor import WorkerSupervisor
 
@@ -107,6 +123,7 @@ def main() -> None:
                 ),
                 app.state.db,
             )
+            app.state.holding_reference_data = HoldingReferenceData(data_dir)
             assert client.get("/api/health").json() == {"status": "ok"}
             timeline = client.get("/api/market-data/timeline")
             assert timeline.status_code == 200
@@ -143,6 +160,21 @@ def main() -> None:
                 "industry",
             ]
             assert not joint_neutralization_method["is_default"]
+            holding_audit_method = next(
+                item for item in methods.json() if item["name"] == "holding_audit"
+            )
+            assert holding_audit_method["requires"] == [
+                "industry_market_cap_neutralize",
+                "tradability_filter",
+                "quantile_net_returns",
+            ]
+            assert holding_audit_method["required_data_symbols"] == [
+                "cap",
+                "industry",
+                "o",
+                "st",
+            ]
+            assert not holding_audit_method["is_default"]
             training_methods = client.get("/api/models/training-methods")
             assert training_methods.status_code == 200
             training_catalog = {item["name"]: item for item in training_methods.json()}
@@ -431,6 +463,15 @@ def main() -> None:
                 "/api/methods/resolve", json={"names": ["fitness"]}
             ).json()
             assert fitness_resolved["methods"] == ["quantile_net_returns", "fitness"]
+            holding_audit_resolved = client.post(
+                "/api/methods/resolve", json={"names": ["holding_audit"]}
+            ).json()
+            assert holding_audit_resolved["methods"] == [
+                "industry_market_cap_neutralize",
+                "tradability_filter",
+                "quantile_net_returns",
+                "holding_audit",
+            ]
             methods = client.get("/api/methods").json()
             net_method = next(
                 method
@@ -494,6 +535,7 @@ def main() -> None:
                         }
                     ],
                     "methods": ["rank_ic", "rank_icir"],
+                    "decay": 3,
                     "signal_start": "2024-01-10",
                     "signal_end": "2024-03-15",
                 },
@@ -502,10 +544,42 @@ def main() -> None:
             assert created.json()["runs"][0]["status"] == "queued"
             assert created.json()["params"]["signal_start"] == "2024-01-10"
             assert created.json()["params"]["signal_end"] == "2024-03-15"
+            assert created.json()["params"]["decay"] == 3
             assert created.json()["runs"][0]["run_params"] == {
+                "decay": 3,
                 "signal_start": "2024-01-10",
                 "signal_end": "2024-03-15",
             }
+            invalid_decay = client.post(
+                "/api/jobs",
+                json={
+                    "kind": "evaluate",
+                    "factors": [
+                        {
+                            "factor_name": factor["factor_name"],
+                            "batch_id": factor["batch_id"],
+                        }
+                    ],
+                    "methods": ["rank_ic", "rank_icir"],
+                    "decay": 0,
+                },
+            )
+            assert invalid_decay.status_code == 422
+            fractional_decay = client.post(
+                "/api/jobs",
+                json={
+                    "kind": "evaluate",
+                    "factors": [
+                        {
+                            "factor_name": "inline",
+                            "expression": "rank_cs(c)",
+                        }
+                    ],
+                    "methods": ["rank_ic", "rank_icir"],
+                    "decay": 1.0,
+                },
+            )
+            assert fractional_decay.status_code == 422
             missing_window_end = client.post(
                 "/api/jobs",
                 json={
@@ -577,6 +651,7 @@ def main() -> None:
                     "params": {
                         "horizon": 5,
                         "n_quantiles": 8,
+                        "decay": 4,
                         "significance_level": 0.1,
                         "stages": editable_stages,
                     },
@@ -587,6 +662,7 @@ def main() -> None:
             assert saved_template["methods"] == []
             assert saved_template["params"]["horizon"] == 5
             assert saved_template["params"]["n_quantiles"] == 8
+            assert saved_template["params"]["decay"] == 4
             assert saved_template["params"]["significance_level"] == 0.1
             assert saved_template["params"]["stages"][0]["methods"] == [
                 "future_data_perturbation",
@@ -600,6 +676,7 @@ def main() -> None:
                     "params": {
                         "horizon": 3,
                         "n_quantiles": 6,
+                        "decay": 3,
                         "significance_level": 0.01,
                         "stages": editable_stages,
                     },
@@ -608,6 +685,7 @@ def main() -> None:
             assert updated_template.status_code == 200
             assert updated_template.json()["name"] == "已修改漏斗模板"
             assert updated_template.json()["params"]["horizon"] == 3
+            assert updated_template.json()["params"]["decay"] == 3
             templated_job = client.post(
                 "/api/jobs",
                 json={
@@ -620,6 +698,7 @@ def main() -> None:
                     ],
                     "horizon": 3,
                     "n_quantiles": 6,
+                    "decay": 3,
                     "significance_level": 0.01,
                 },
             )
@@ -633,6 +712,197 @@ def main() -> None:
                 "future_data_perturbation",
                 "rank_ic",
             ]
+
+            holding_output = temporary_root / "holding-audit-run"
+            (holding_output / "details").mkdir(parents=True)
+            holding_summary = pd.DataFrame(
+                {
+                    "top_group_position_count": [2, 2],
+                    "top_group_weight": [0.5, 0.5],
+                    "top_group_gross_return": [0.012, 0.008],
+                    "top_group_transaction_cost": [0.003, 0.001],
+                    "top_group_net_return": [0.009, 0.007],
+                },
+                index=pd.DatetimeIndex(["2024-01-02", "2024-01-03"], name="day"),
+            )
+            holding_summary.to_csv(
+                holding_output / "details" / "holding_audit_summary.csv",
+                encoding="utf-8-sig",
+            )
+            pd.DataFrame(
+                [
+                    {
+                        "signal_day": "2024-01-02",
+                        "entry_day": "2024-01-03",
+                        "exit_day": "2024-01-04",
+                        "security_code": "000001",
+                        "group": "G10",
+                        "factor_rank": 10,
+                        "rank_in_top_group": 1,
+                        "target_weight": 0.5,
+                        "factor_value": 2.5,
+                        "forward_open_return": 0.01,
+                        "entry_open": 10.0,
+                        "exit_open": 10.1,
+                        "market_cap_yi": 12.3,
+                        "industry_l1_code": "01031701",
+                        "entry_is_st": False,
+                    },
+                    {
+                        "signal_day": "2024-01-02",
+                        "entry_day": "2024-01-03",
+                        "exit_day": "2024-01-04",
+                        "security_code": "000002",
+                        "group": "G10",
+                        "factor_rank": 9,
+                        "rank_in_top_group": 2,
+                        "target_weight": 0.5,
+                        "factor_value": 2.0,
+                        "forward_open_return": 0.014,
+                        "entry_open": 8.0,
+                        "exit_open": 8.112,
+                        "market_cap_yi": 8.9,
+                        "industry_l1_code": "01031702",
+                        "entry_is_st": False,
+                    },
+                    {
+                        "signal_day": "2024-01-03",
+                        "entry_day": "2024-01-04",
+                        "exit_day": "2024-01-05",
+                        "security_code": "000003",
+                        "group": "G10",
+                        "factor_rank": 10,
+                        "rank_in_top_group": 1,
+                        "target_weight": 0.5,
+                        "factor_value": 1.5,
+                        "forward_open_return": 0.005,
+                        "entry_open": 6.0,
+                        "exit_open": 6.03,
+                        "market_cap_yi": 6.7,
+                        "industry_l1_code": "01031701",
+                        "entry_is_st": False,
+                    },
+                    {
+                        "signal_day": "2024-01-03",
+                        "entry_day": "2024-01-04",
+                        "exit_day": "2024-01-05",
+                        "security_code": "000004",
+                        "group": "G10",
+                        "factor_rank": 9,
+                        "rank_in_top_group": 2,
+                        "target_weight": 0.5,
+                        "factor_value": 1.0,
+                        "forward_open_return": 0.011,
+                        "entry_open": 5.0,
+                        "exit_open": 5.055,
+                        "market_cap_yi": 5.4,
+                        "industry_l1_code": "01031702",
+                        "entry_is_st": False,
+                    },
+                ]
+            ).to_parquet(holding_output / "details" / "holding_audit.parquet")
+            app.state.db.create_job(
+                {
+                    "id": "holding-audit-job",
+                    "kind": "evaluate",
+                    "title": "holding audit",
+                    "params": {},
+                    "created_at": "2026-07-05T00:00:00+08:00",
+                },
+                [
+                    {
+                        "id": "holding-audit-run",
+                        "job_id": "holding-audit-job",
+                        "factor_name": "holding_audit_factor",
+                        "batch_id": "synthetic",
+                        "expression": "rank_cs(c)",
+                        "horizon": 1,
+                        "n_quantiles": 10,
+                        "methods": [
+                            "industry_market_cap_neutralize",
+                            "tradability_filter",
+                            "quantile_net_returns",
+                            "holding_audit",
+                        ],
+                        "output_dir": str(holding_output),
+                        "created_at": "2026-07-05T00:00:00+08:00",
+                    }
+                ],
+            )
+            app.state.db.complete_run(
+                "holding-audit-run",
+                {
+                    "evaluation_details": {
+                        "holding_audit_summary": "details/holding_audit_summary.csv"
+                    },
+                    "evaluation_artifacts": {
+                        "holding_audit": "details/holding_audit.parquet"
+                    },
+                },
+            )
+            audit_dates = client.get("/api/runs/holding-audit-run/holding-audit/dates")
+            assert audit_dates.status_code == 200
+            assert audit_dates.json()["top_group"] == "G10"
+            assert audit_dates.json()["dates"] == [
+                {
+                    "signal_day": "2024-01-02",
+                    "top_group_position_count": 2,
+                    "top_group_weight": 0.5,
+                    "top_group_gross_return": 0.012,
+                    "top_group_transaction_cost": 0.003,
+                    "top_group_net_return": 0.009,
+                },
+                {
+                    "signal_day": "2024-01-03",
+                    "top_group_position_count": 2,
+                    "top_group_weight": 0.5,
+                    "top_group_gross_return": 0.008,
+                    "top_group_transaction_cost": 0.001,
+                    "top_group_net_return": 0.007,
+                },
+            ]
+            audit_page = client.get(
+                "/api/runs/holding-audit-run/holding-audit",
+                params={"signal_day": "2024-01-02", "page_size": 1},
+            )
+            assert audit_page.status_code == 200
+            assert audit_page.json()["total"] == 2
+            assert audit_page.json()["page_size"] == 1
+            assert audit_page.json()["reference_data"] == {
+                "security_name_basis": "当前或退市前最后简称",
+                "security_name_is_point_in_time": False,
+                "security_name_observed_at": "2024-06-24",
+                "industry_classification": "中信一级行业（ZX）",
+            }
+            assert audit_page.json()["rows"] == [
+                {
+                    "signal_day": "2024-01-02",
+                    "entry_day": "2024-01-03",
+                    "exit_day": "2024-01-04",
+                    "security_code": "000001",
+                    "security_name": "测试公司000001",
+                    "security_name_basis": "current_or_last_known_master_name",
+                    "group": "G10",
+                    "factor_rank": 10,
+                    "rank_in_top_group": 1,
+                    "target_weight": 0.5,
+                    "factor_value": 2.5,
+                    "forward_open_return": 0.01,
+                    "entry_open": 10.0,
+                    "exit_open": 10.1,
+                    "market_cap_yi": 12.3,
+                    "industry_l1_code": "01031701",
+                    "industry_l1_name": "石油石化",
+                    "entry_is_st": False,
+                }
+            ]
+            assert (
+                client.get(
+                    "/api/runs/holding-audit-run/holding-audit",
+                    params={"signal_day": "2024-01-04"},
+                ).status_code
+                == 404
+            )
 
             compare_output = temporary_root / "compare-run"
             (compare_output / "details").mkdir(parents=True)
@@ -833,7 +1103,10 @@ def main() -> None:
         assert funnel_job["runs"][1]["methods"][-1] == "quantile_returns"
         assert all(
             run["run_params"]
-            == {"signal_start": "2024-01-10", "signal_end": "2024-03-15"}
+            == {
+                "signal_start": "2024-01-10",
+                "signal_end": "2024-03-15",
+            }
             for run in funnel_job["runs"]
         )
 

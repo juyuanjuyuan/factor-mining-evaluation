@@ -120,7 +120,7 @@ BUILTIN_TEMPLATES = (
         "完整漏斗",
         "funnel",
         [],
-        {"horizon": 1, "n_quantiles": 10, "significance_level": 0.05},
+        {"horizon": 1, "n_quantiles": 10, "decay": 1, "significance_level": 0.05},
     ),
 )
 REMOVED_BUILTIN_TEMPLATE_NAMES = ("快速IC筛查", "未来数据校验", "完整组合评估")

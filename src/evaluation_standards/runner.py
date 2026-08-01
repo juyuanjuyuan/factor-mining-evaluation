@@ -49,6 +49,7 @@ def evaluate_factor_standards(
     standards: str | Iterable[str] | None = None,
     horizon: int = 1,
     n_quantiles: int = 10,
+    decay: int = 1,
     file_names: Mapping[str, str] | None = None,
     preloaded_data: Mapping[str, pd.DataFrame] | None = None,
     significance_level: float = 0.05,
@@ -89,6 +90,7 @@ def evaluate_factor_standards(
             output_dir=standard_dir,
             horizon=horizon,
             n_quantiles=n_quantiles,
+            decay=decay,
             file_names=resolved_files,
             preloaded_data=shared_data,
             evaluation_methods=standard.methods,
@@ -125,6 +127,7 @@ def evaluate_factor_standards(
         "signal_end": str(signal_end),
         "horizon": horizon,
         "n_quantiles": n_quantiles,
+        "decay": decay,
         "return_definition": RETURN_DEFINITION,
         "thresholds": {
             "significance_level": significance_level,

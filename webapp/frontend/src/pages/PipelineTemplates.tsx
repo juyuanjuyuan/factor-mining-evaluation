@@ -18,6 +18,7 @@ import {
 import { useState } from 'react'
 import { api, FunnelStage, Template } from '../api/client'
 import { PipelineBuilder } from '../components/PipelineBuilder'
+import { SectionTabs } from '../components/SectionTabs'
 import { STAGE_INFO, methodLabel } from '../lib/metrics'
 
 type SaveTemplate = {
@@ -88,6 +89,7 @@ export default function PipelineTemplates() {
       name: template ? `${template.name}${clone ? ' 副本' : ''}` : '',
       horizon: Number(template?.params?.horizon ?? 1),
       n_quantiles: Number(template?.params?.n_quantiles ?? 10),
+      decay: Number(template?.params?.decay ?? 1),
       significance_level: Number(template?.params?.significance_level ?? 0.05),
     })
     setOpen(true)
@@ -113,6 +115,7 @@ export default function PipelineTemplates() {
         ? {
             horizon: values.horizon,
             n_quantiles: values.n_quantiles,
+            decay: values.decay,
             significance_level: values.significance_level,
             stages: (stages.data || []).map((stage) => ({
               name: stage.name,
@@ -133,16 +136,24 @@ export default function PipelineTemplates() {
 
   return (
     <>
-      <div className="page-heading">
-        <div>
+      <div className="page-heading page-heading-row">
+        <div className="page-heading-copy">
           <Typography.Title level={2}>流水线模板</Typography.Title>
           <Typography.Text type="secondary">
             管理评价方法的执行顺序；完整数学定义和方法说明集中在评价模块库
           </Typography.Text>
         </div>
-        <Button type="primary" onClick={() => openEditor()}>
-          新建模板
-        </Button>
+        <Space wrap>
+          <SectionTabs
+            tabs={[
+              { label: '流水线模板', path: '/pipelines' },
+              { label: '评价模块库', path: '/methods' },
+            ]}
+          />
+          <Button type="primary" onClick={() => openEditor()}>
+            新建模板
+          </Button>
+        </Space>
       </div>
 
       <Card className="surface-card">
@@ -160,7 +171,7 @@ export default function PipelineTemplates() {
                   </Space>
                   <div className="template-row-desc">
                     {template.kind === 'funnel'
-                      ? `标准四阶段 · H${Number(template.params?.horizon ?? 1)} · ${Number(template.params?.n_quantiles ?? 10)} 组 · 显著性水平 ${Number(template.params?.significance_level ?? 0.05)}`
+                      ? `标准四阶段 · H${Number(template.params?.horizon ?? 1)} · ${Number(template.params?.n_quantiles ?? 10)} 组 · Decay ${Number(template.params?.decay ?? 1)} · 显著性水平 ${Number(template.params?.significance_level ?? 0.05)}`
                       : (template.methods || []).map(methodLabel).join(' → ')}
                   </div>
                 </div>
@@ -242,6 +253,17 @@ export default function PipelineTemplates() {
                   rules={[{ required: true }]}
                 >
                   <InputNumber min={2} max={20} />
+                </Form.Item>
+                <Form.Item
+                  name="decay"
+                  label="Decay（天）"
+                  rules={[
+                    { required: true },
+                    { type: 'number', min: 1, message: 'Decay 必须是正整数' },
+                  ]}
+                  tooltip="n>1 时在交易前对因子值按 n,n−1,…,1 做线性衰减；n 必须为正整数，1 不额外平滑。"
+                >
+                  <InputNumber min={1} precision={0} />
                 </Form.Item>
                 <Form.Item
                   name="significance_level"

@@ -28,6 +28,10 @@ class RunReader:
         return sorted(_relative_map(run.get("result") or {}, "evaluation_details"))
 
     @staticmethod
+    def artifact_names(run: Mapping[str, Any]) -> list[str]:
+        return sorted(_relative_map(run.get("result") or {}, "evaluation_artifacts"))
+
+    @staticmethod
     def split_version(name: str) -> tuple[str, int]:
         parts = name.rsplit("__", 1)
         if len(parts) == 2 and parts[1].isdigit():
@@ -45,6 +49,12 @@ class RunReader:
         if not matches:
             return None
         return max(matches, key=lambda item: item[0])[1]
+
+    @classmethod
+    def latest_artifact_name(
+        cls, run: Mapping[str, Any], base_name: str
+    ) -> str | None:
+        return cls.latest_detail_name(cls.artifact_names(run), base_name)
 
     @lru_cache(maxsize=128)
     def read_detail(self, output_dir: str, relative_path: str, mtime_ns: int) -> dict[str, Any]:

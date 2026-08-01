@@ -15,6 +15,12 @@ from .future_perturbation import (
     future_data_perturbation_test,
     perturb_data_after,
 )
+from .holding_audit import (
+    HOLDING_AUDIT_ARTIFACT,
+    HOLDING_AUDIT_COLUMNS,
+    HOLDING_AUDIT_SUMMARY,
+    evaluate_holding_audit,
+)
 from .fitness import calculate_yearly_fitness, evaluate_fitness
 from .ic_horizon_decay import (
     IC_HORIZON_DECAY_MAX_HORIZON,
@@ -87,6 +93,9 @@ __all__ = [
     "EvaluationContext",
     "EvaluationMethod",
     "EvaluationState",
+    "HOLDING_AUDIT_ARTIFACT",
+    "HOLDING_AUDIT_COLUMNS",
+    "HOLDING_AUDIT_SUMMARY",
     "assign_quantile",
     "available_evaluation_methods",
     "calc_group_returns",
@@ -99,6 +108,7 @@ __all__ = [
     "evaluate_quantile_net_returns",
     "evaluate_quantile_returns",
     "evaluate_future_data_perturbation",
+    "evaluate_holding_audit",
     "evaluate_fitness",
     "evaluate_ic_horizon_decay",
     "evaluate_ic_peak_decay",

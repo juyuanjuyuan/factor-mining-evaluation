@@ -23,6 +23,7 @@ export const METRIC_GROUPS = [
   '显著性检验',
   '分位组收益',
   '头部组合',
+  '组合诊断',
   'Fitness',
   '滚动风险',
   '数据质量',
@@ -152,6 +153,9 @@ export const METRIC_SPECS: Record<string, MetricSpec> = {
   tradability_masked_limit_up_obs: spec('开盘涨停剔除', '数据质量', 'int'),
   tradability_masked_limit_down_obs: spec('开盘跌停剔除', '数据质量', 'int'),
   tradability_masked_st_obs: spec('ST 剔除', '数据质量', 'int'),
+  holding_audit_signal_day_count: spec('可审计信号日数', '组合诊断', 'int'),
+  holding_audit_position_count: spec('最高组持仓观测数', '组合诊断', 'int'),
+  holding_audit_top_group_number: spec('审计分位组', '组合诊断', 'int'),
 }
 
 /** 运行参数键：已经展示在页头，不放进指标卡。 */
@@ -162,6 +166,7 @@ export const PARAM_KEYS = new Set([
   'artifact_name',
   'expression',
   'horizon',
+  'decay',
   'return_definition',
   'n_quantiles',
   'evaluation_methods',
@@ -305,6 +310,7 @@ export const DETAIL_TITLES: Record<string, string> = {
   market_cap_neutralization: '市值中性化统计',
   industry_neutralization: '行业中性化统计',
   industry_market_cap_neutralization: '行业＋市值联合中性化统计',
+  holding_audit_summary: '历史持仓审计摘要',
 }
 
 const DETAIL_COLUMN_TITLES: Record<string, string> = {
@@ -341,6 +347,11 @@ const DETAIL_COLUMN_TITLES: Record<string, string> = {
   drawdown_penalty_lambda: '回撤惩罚 λ',
   fitness_radicand: '收益换手根号项',
   fitness: '年度 Fitness',
+  top_group_position_count: '最高组持仓数',
+  top_group_weight: '最高组等权目标权重',
+  top_group_gross_return: '最高组毛收益',
+  top_group_transaction_cost: '最高组交易成本',
+  top_group_net_return: '最高组净收益',
 }
 
 /** 详情图表展示顺序：旗舰图在前。 */
@@ -364,6 +375,7 @@ const DETAIL_ORDER = [
   'market_cap_neutralization',
   'industry_neutralization',
   'industry_market_cap_neutralization',
+  'holding_audit_summary',
   'tradability_filter',
 ]
 

@@ -132,6 +132,7 @@ def create_job(
     params = {
         "horizon": request.horizon,
         "n_quantiles": request.n_quantiles,
+        "decay": request.decay,
         "methods": resolved_methods,
         "significance_level": request.significance_level,
         "template_id": request.template_id,
@@ -140,10 +141,14 @@ def create_job(
         "signal_start": request.signal_start,
         "signal_end": request.signal_end,
     }
-    run_params = {
-        "signal_start": request.signal_start,
-        "signal_end": request.signal_end,
-    } if request.signal_start is not None else {}
+    run_params = {"decay": request.decay}
+    if request.signal_start is not None:
+        run_params.update(
+            {
+                "signal_start": request.signal_start,
+                "signal_end": request.signal_end,
+            }
+        )
     if request.tags:
         params["tag_selection"] = {
             "tags": request.tags,

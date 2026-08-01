@@ -50,7 +50,7 @@ export default function Compare() {
         <div>
           <Typography.Title level={2}>多因子对比</Typography.Title>
           <Typography.Text type="secondary">
-            选择多个成功的运行结果，横向对比指标与曲线（建议持有期、分组数一致）
+            选择多个成功的运行结果，横向对比指标与曲线（建议持有期、分组数、Decay 一致）
           </Typography.Text>
         </div>
       </div>
@@ -66,7 +66,7 @@ export default function Compare() {
             optionFilterProp="label"
             options={(runs.data || []).map((run) => ({
               value: run.id,
-              label: `${run.factor_name} · H${run.horizon} · ${run.methods.length}方法 · ${shortTime(run.finished_at)}`,
+              label: `${run.factor_name} · H${run.horizon} · D${Number(run.result?.decay ?? run.run_params?.decay ?? 1)} · ${run.methods.length}方法 · ${shortTime(run.finished_at)}`,
             }))}
           />
           <Button

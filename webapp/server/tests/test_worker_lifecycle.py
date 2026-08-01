@@ -133,6 +133,39 @@ def main() -> None:
             assert result and result["result"]["return_definition"]
             assert Path(result["output_dir"], "metrics.csv").is_file()
 
+            # Long-lived workers must not keep stale market data after an
+            # atomic data refresh. This is especially important for ST status:
+            # a repaired input must affect the next evaluation without a
+            # manual web-server restart.
+            _, pre_refresh_run = add_job(
+                db,
+                settings,
+                "pre_refresh_tradability",
+                expression="c",
+                methods=["tradability_filter"],
+            )
+            wait_until(lambda: db.get_run(pre_refresh_run)["status"] == "succeeded")
+            assert (
+                db.get_run(pre_refresh_run)["result"]["tradability_masked_st_obs"] == 0
+            )
+            st_path = data_dir / "st_status_df.pq"
+            refreshed_st = pd.read_parquet(st_path)
+            refreshed_st.iloc[1, 0] = True
+            temporary_st = st_path.with_suffix(".refresh.pq")
+            refreshed_st.to_parquet(temporary_st)
+            temporary_st.replace(st_path)
+            _, post_refresh_run = add_job(
+                db,
+                settings,
+                "post_refresh_tradability",
+                expression="c",
+                methods=["tradability_filter"],
+            )
+            wait_until(lambda: db.get_run(post_refresh_run)["status"] == "succeeded")
+            assert (
+                db.get_run(post_refresh_run)["result"]["tradability_masked_st_obs"] == 1
+            )
+
             _, industry_run = add_job(
                 db,
                 settings,

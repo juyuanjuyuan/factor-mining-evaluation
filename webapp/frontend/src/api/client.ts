@@ -340,6 +340,61 @@ export type Detail = {
   summary?: Record<string, number | null>
 }
 
+export type HoldingAuditDay = {
+  signal_day: string
+  top_group_position_count: number | null
+  top_group_weight: number | null
+  top_group_gross_return: number | null
+  top_group_transaction_cost: number | null
+  top_group_net_return: number | null
+}
+
+export type HoldingAuditDates = {
+  top_group: string
+  dates: HoldingAuditDay[]
+}
+
+export type HoldingAuditPosition = {
+  signal_day: string
+  entry_day: string
+  exit_day: string
+  security_code: string
+  security_name: string | null
+  security_name_basis: string | null
+  group: string
+  factor_rank: number
+  rank_in_top_group: number
+  target_weight: number
+  factor_value: number
+  forward_open_return: number
+  entry_open: number | null
+  exit_open: number | null
+  market_cap_yi: number | null
+  industry_l1_code: string | null
+  industry_l1_name: string | null
+  entry_is_st: boolean
+}
+
+export type HoldingAuditReferenceData = {
+  security_name_basis: string
+  security_name_is_point_in_time: boolean
+  security_name_observed_at: string | null
+  industry_classification: string | null
+}
+
+export type HoldingAuditPage = {
+  signal_day: string
+  entry_day: string
+  exit_day: string
+  top_group: string
+  summary: Omit<HoldingAuditDay, 'signal_day'>
+  total: number
+  page: number
+  page_size: number
+  reference_data: HoldingAuditReferenceData
+  rows: HoldingAuditPosition[]
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, {
     headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
@@ -443,6 +498,11 @@ export const api = {
   },
   run: (id: string) => request<Run>(`/runs/${id}`),
   detail: (id: string, name: string) => request<Detail>(`/runs/${id}/details/${name}`),
+  holdingAuditDates: (id: string) => request<HoldingAuditDates>(`/runs/${id}/holding-audit/dates`),
+  holdingAudit: (id: string, signalDay: string, page = 1, pageSize = 100) => {
+    const query = new URLSearchParams({ signal_day: signalDay, page: String(page), page_size: String(pageSize) })
+    return request<HoldingAuditPage>(`/runs/${id}/holding-audit?${query.toString()}`)
+  },
   compare: (runIds: string[]) =>
     request<CompareResult>('/compare', {
       method: 'POST',

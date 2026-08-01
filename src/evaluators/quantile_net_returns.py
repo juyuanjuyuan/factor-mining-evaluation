@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from .base import EvaluationState, evaluation_method
+from .quantile_groups import quantile_membership
 
 
 # Default to the strict A-share GP testing assumption: 12.5 bps to buy and
@@ -58,17 +59,18 @@ def calculate_quantile_net_returns(
     for row_number, day in enumerate(factor.index):
         factor_row = factor_values[row_number]
         return_row = return_values[row_number]
-        valid = np.isfinite(factor_row) & np.isfinite(return_row)
-        valid_positions = np.flatnonzero(valid)
-        count = len(valid_positions)
-        if count < n_quantiles:
+        membership = quantile_membership(
+            factor_row,
+            return_row,
+            n_quantiles=n_quantiles,
+        )
+        if membership is None:
             continue
-
-        ranks = pd.Series(factor_row[valid]).rank(method="first").to_numpy()
-        groups = np.floor((ranks - 1) * n_quantiles / count).astype(int)
+        valid_positions, _ranks, groups = membership
+        count = len(valid_positions)
         gross_sums = np.bincount(
             groups,
-            weights=return_row[valid],
+            weights=return_row[valid_positions],
             minlength=n_quantiles,
         )
         group_counts = np.bincount(groups, minlength=n_quantiles)

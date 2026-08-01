@@ -271,7 +271,18 @@ function CampaignCard({ campaign }: { campaign: GeneticCampaign }) {
   )
 }
 
-export function GeneticMiningPanel({ open, onOpen, onClose }: { open: boolean; onOpen: () => void; onClose: () => void }) {
+export function GeneticMiningPanel({
+  open,
+  onOpen,
+  onClose,
+  // 'page' 用在独立的遗传挖掘页：任务列表直接铺开，标题与操作由页面自己给
+  variant = 'panel',
+}: {
+  open: boolean
+  onOpen: () => void
+  onClose: () => void
+  variant?: 'panel' | 'page'
+}) {
   const [form] = Form.useForm<GeneticCampaignInput>()
   const [panelKeys, setPanelKeys] = useState<string[]>([])
   const queryClient = useQueryClient()
@@ -334,48 +345,56 @@ export function GeneticMiningPanel({ open, onOpen, onClose }: { open: boolean; o
     if (active) setPanelKeys(['campaigns'])
   }, [active])
 
+  const campaignList = campaigns.isError ? (
+    <Alert type="error" showIcon title="无法读取遗传挖掘任务" description={campaigns.error.message} />
+  ) : campaigns.data?.length ? (
+    <div className="gp-campaign-list">
+      {campaigns.data.map((campaign) => <CampaignCard campaign={campaign} key={campaign.campaign} />)}
+    </div>
+  ) : (
+    <Empty description="尚未创建遗传挖掘任务">
+      <Button type="primary" icon={<BranchesOutlined />} onClick={onOpen}>创建第一个任务</Button>
+    </Empty>
+  )
+
   return (
     <>
-      <Collapse
-        className="collapse-card gp-campaign-panel"
-        activeKey={panelKeys}
-        onChange={(keys) => setPanelKeys(Array.isArray(keys) ? keys.map(String) : [String(keys)])}
-        items={[
-          {
-            key: 'campaigns',
-            label: (
-              <Flex justify="space-between" align="center" gap={12} wrap>
-                <Space wrap>
-                  <BranchesOutlined />
-                  <span>遗传规划挖掘任务</span>
-                  {active ? <Tag color="blue">{active.campaign} 运行中</Tag> : <Tag>当前无运行任务</Tag>}
-                  <Typography.Text type="secondary" style={{ fontWeight: 'normal' }}>
-                    独立进程，不阻塞普通因子评价
-                  </Typography.Text>
-                </Space>
-                <Button size="small" icon={<ReloadOutlined />} onClick={(event) => {
-                  event.stopPropagation()
-                  campaigns.refetch()
-                }}>刷新</Button>
-              </Flex>
-            ),
-            children: campaigns.isError ? (
-              <Alert type="error" showIcon title="无法读取遗传挖掘任务" description={campaigns.error.message} />
-            ) : campaigns.data?.length ? (
-              <div className="gp-campaign-list">
-                {campaigns.data.map((campaign) => <CampaignCard campaign={campaign} key={campaign.campaign} />)}
-              </div>
-            ) : (
-              <Empty description="尚未创建遗传挖掘任务">
-                <Button type="primary" icon={<BranchesOutlined />} onClick={onOpen}>创建第一个任务</Button>
-              </Empty>
-            ),
-          },
-        ]}
-      />
+      {variant === 'page' ? (
+        campaignList
+      ) : (
+        <Collapse
+          className="collapse-card gp-campaign-panel"
+          activeKey={panelKeys}
+          onChange={(keys) => setPanelKeys(Array.isArray(keys) ? keys.map(String) : [String(keys)])}
+          items={[
+            {
+              key: 'campaigns',
+              label: (
+                <Flex justify="space-between" align="center" gap={12} wrap>
+                  <Space wrap>
+                    <BranchesOutlined />
+                    <span>遗传规划挖掘任务</span>
+                    {active ? <Tag color="blue">{active.campaign} 运行中</Tag> : <Tag>当前无运行任务</Tag>}
+                    <Typography.Text type="secondary" style={{ fontWeight: 'normal' }}>
+                      独立进程，不阻塞普通因子评价
+                    </Typography.Text>
+                  </Space>
+                  <Button size="small" icon={<ReloadOutlined />} onClick={(event) => {
+                    event.stopPropagation()
+                    campaigns.refetch()
+                  }}>刷新</Button>
+                </Flex>
+              ),
+              children: campaignList,
+            },
+          ]}
+        />
+      )}
       <Drawer
         title="遗传规划添加因子"
-        width={720}
+        size="min(720px, 100vw)"
+        // 面板本身可能开在弹窗里，创建表单要压在弹窗之上
+        zIndex={1100}
         open={open}
         onClose={onClose}
         destroyOnHidden

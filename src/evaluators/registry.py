@@ -12,6 +12,7 @@ from .base import (
 from .cycle_context import apply_cycle_context
 from .fitness import evaluate_fitness
 from .future_perturbation import evaluate_future_data_perturbation
+from .holding_audit import evaluate_holding_audit
 from .ic_horizon_decay import evaluate_ic_horizon_decay
 from .ic_peak_decay import evaluate_ic_peak_decay
 from .ic_trend_filter import evaluate_ic_trend_filter

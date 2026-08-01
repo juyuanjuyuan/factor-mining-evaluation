@@ -48,6 +48,31 @@ r_H(t) = open[t + 1 + H] / open[t + 1] - 1
 Thus the default `H=1` label is exactly `open[t + 2] / open[t + 1] - 1`.
 Factor expressions may only use information available at or before day `t`.
 
+### Run-level factor decay
+
+Before any evaluator consumes a score (including IC, neutralization,
+tradability filtering, and quantile portfolios), an optional integer `decay`
+is applied to the completed factor matrix. The default is `1`, exactly
+preserving all previous evaluations. For `n > 1`, each security's score on
+day `t` is:
+
+```text
+decay_n(x_t) = (n*x_t + (n-1)*x_(t-1) + ... + 1*x_(t-n+1)) / (n + ... + 1)
+```
+
+At the beginning of available history, the average uses only the observations
+already available. Missing factor values do not contribute weight. Input must
+be a positive integer: `1` means no extra smoothing, and zero, negative, or
+fractional values are rejected. Decay uses only dates at or before `t`, so it
+does not alter the next-open return-label convention.
+
+This is a run-level **factor preprocessor**, not an evaluator in the ordered
+pipeline: `src/transforms/linear_decay.py` owns its validation and numerical
+implementation, while the engine invokes its stable `apply_linear_decay`
+boundary exactly once before constructing `EvaluationContext`. Causality
+diagnostics reuse that same transform module when rebuilding a factor, so no
+diagnostic carries a private copy of the formula.
+
 ### Evaluation date window
 
 `evaluate_factor_expression` accepts optional `signal_start` and `signal_end` boundaries. The CLI
@@ -187,6 +212,7 @@ Core columns:
 | `horizon` | number of open-to-open holding periods after entering at `t+1` open |
 | `return_definition` | canonical formula: `open[t+1+horizon]/open[t+1]-1` |
 | `n_quantiles` | number of groups |
+| `decay` | post-expression linear-decay window; `1` is the historical no-decay default |
 | `evaluation_methods` | ordered comma-separated method names used by this run |
 | `evaluation_details` | JSON map of method detail names to relative CSV paths |
 | `evaluation_artifacts` | JSON map of method artifact names to relative paths |

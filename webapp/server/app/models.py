@@ -6,7 +6,7 @@ from datetime import date
 import math
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, StrictInt, field_validator, model_validator
 
 from model_training import DEFAULT_MODEL_TRAINING_METHOD
 
@@ -66,6 +66,7 @@ class JobCreate(BaseModel):
     template_id: int | None = None
     horizon: int = Field(default=1, ge=1)
     n_quantiles: int = Field(default=10, ge=2)
+    decay: StrictInt = Field(default=1, ge=1)
     significance_level: float = Field(default=0.05, gt=0, lt=1)
     signal_start: str | None = None
     signal_end: str | None = None

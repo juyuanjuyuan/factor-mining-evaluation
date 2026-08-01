@@ -37,6 +37,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--quantiles", type=int, default=10)
     parser.add_argument(
+        "--decay",
+        type=int,
+        default=1,
+        help="post-expression linear decay window (positive integer; 1 preserves prior behavior)",
+    )
+    parser.add_argument(
         "--signal-start",
         help="inclusive signal-date window start (YYYY-MM-DD); requires --signal-end",
     )
@@ -78,6 +84,8 @@ def main() -> None:
     args = parser.parse_args()
     if (args.signal_start is None) != (args.signal_end is None):
         parser.error("--signal-start and --signal-end must be provided together")
+    if args.decay < 1:
+        parser.error("--decay must be a positive integer")
     result = evaluate_factor_expression(
         factor_name=args.factor_name,
         expression=args.expression,
@@ -85,6 +93,7 @@ def main() -> None:
         output_dir=args.output_dir,
         horizon=args.horizon,
         n_quantiles=args.quantiles,
+        decay=args.decay,
         signal_start=args.signal_start,
         signal_end=args.signal_end,
         evaluation_methods=resolve_evaluation_methods(args.methods),
