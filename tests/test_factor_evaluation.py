@@ -40,7 +40,6 @@ from returns import (
 def main() -> None:
     assert _artifact_name("alpha101_001") == "alpha101_001"
     assert _artifact_name('bad/name:*?') == "bad_name___"
-
     rng = np.random.default_rng(7)
     days = pd.date_range("2024-01-01", periods=35, freq="B")
     codes = [f"{number:06d}" for number in range(30)]
@@ -101,6 +100,7 @@ def main() -> None:
         assert result["metrics"]["ic_count"] > 0
         assert np.isfinite(result["metrics"]["ic_mean"])
         assert result["metrics"]["return_definition"] == RETURN_DEFINITION
+        assert result["metrics"]["decay"] == 1
         assert result["evaluation_methods"] == [
             "rank_ic",
             "rank_icir",
@@ -159,6 +159,19 @@ def main() -> None:
             root / "results",
             pd.read_csv(rank_only["metrics_path"]),
         )
+
+        decayed = evaluate_factor_expression(
+            factor_name="factor_test1_decay3",
+            expression=expression,
+            data_dir=root,
+            output_dir=root / "results",
+            n_quantiles=5,
+            decay=3,
+            evaluation_methods=resolve_evaluation_methods("future_data_perturbation"),
+        )
+        assert decayed["metrics"]["decay"] == 3
+        assert decayed["metrics"]["future_perturbation_changed_values"] == 0
+        assert "DECAY = 3" in Path(decayed["code_path"]).read_text(encoding="utf-8")
 
         trend_filter = evaluate_factor_expression(
             factor_name="factor_ic_trend_filter",

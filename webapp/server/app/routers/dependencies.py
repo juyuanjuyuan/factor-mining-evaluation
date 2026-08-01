@@ -1,6 +1,7 @@
 from fastapi import Request
 
 from ..db import Database
+from ..services.holding_reference_data import HoldingReferenceData
 from ..services.registry_service import RegistryService
 from ..services.run_reader import RunReader
 from ..worker.supervisor import WorkerSupervisor
@@ -17,6 +18,10 @@ def get_registry(request: Request) -> RegistryService:
 
 def get_reader(request: Request) -> RunReader:
     return request.app.state.reader
+
+
+def get_holding_reference_data(request: Request) -> HoldingReferenceData:
+    return request.app.state.holding_reference_data
 
 
 def get_supervisor(request: Request) -> WorkerSupervisor | None:

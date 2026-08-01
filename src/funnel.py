@@ -141,6 +141,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--horizon", type=int, default=1)
     parser.add_argument("--quantiles", type=int, default=10)
     parser.add_argument(
+        "--decay",
+        type=int,
+        default=1,
+        help="post-expression linear decay window (positive integer; 1 preserves prior behavior)",
+    )
+    parser.add_argument(
         "--significance-level",
         type=float,
         default=0.05,
@@ -272,6 +278,7 @@ def matching_stage_record(
     *,
     horizon: int,
     n_quantiles: int,
+    decay: int = 1,
 ) -> dict[str, Any] | None:
     """Return a reusable result only when metadata and artifacts all match."""
 
@@ -301,6 +308,11 @@ def matching_stage_record(
             str(record["expression"]) == factor.expression
             and int(record["horizon"]) == horizon
             and int(record["n_quantiles"]) == n_quantiles
+            and (
+                1
+                if "decay" not in record or pd.isna(record["decay"])
+                else record["decay"]
+            ) == decay
             and str(record["return_definition"]) == RETURN_DEFINITION
             and str(record["evaluation_methods"]) == ",".join(stage.method_names)
         )
@@ -440,6 +452,7 @@ def _manifest(
     output_dir: Path,
     horizon: int,
     n_quantiles: int,
+    decay: int,
     significance_level: float,
     required_symbols: set[str],
 ) -> dict[str, Any]:
@@ -452,6 +465,7 @@ def _manifest(
         "output_dir": str(output_dir),
         "horizon": horizon,
         "n_quantiles": n_quantiles,
+        "decay": decay,
         "significance_level": significance_level,
         "return_definition": RETURN_DEFINITION,
         "required_symbols": sorted(required_symbols),
@@ -473,6 +487,8 @@ def main() -> int:
         raise ValueError("significance-level must be strictly between 0 and 1")
     if args.horizon < 1 or args.quantiles < 3:
         raise ValueError("horizon must be positive and quantiles must be at least 3")
+    if args.decay < 1:
+        raise ValueError("decay must be a positive integer")
 
     data_dir = args.data_dir.expanduser().resolve()
     output_dir = args.output_dir.expanduser().resolve()
@@ -498,6 +514,7 @@ def main() -> int:
         output_dir=output_dir,
         horizon=args.horizon,
         n_quantiles=args.quantiles,
+        decay=args.decay,
         significance_level=args.significance_level,
         required_symbols=symbols,
     )
@@ -533,6 +550,7 @@ def main() -> int:
                 stage,
                 horizon=args.horizon,
                 n_quantiles=args.quantiles,
+                decay=args.decay,
             )
             execution_state = "reused"
             started = time.perf_counter()
@@ -562,6 +580,7 @@ def main() -> int:
                         output_dir=stage_dir,
                         horizon=args.horizon,
                         n_quantiles=args.quantiles,
+                        decay=args.decay,
                         file_names=file_names,
                         preloaded_data=shared_data,
                         evaluation_methods=stage.methods,

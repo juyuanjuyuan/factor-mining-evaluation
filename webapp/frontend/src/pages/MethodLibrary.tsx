@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { Alert, Card, Empty, Input, Select, Skeleton, Space, Tag, Typography } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { api, Method } from '../api/client'
 import { LatexFormula } from '../components/LatexFormula'
+import { SectionTabs } from '../components/SectionTabs'
 import { METHOD_DEFINITIONS } from '../lib/methodDefinitions'
 import { methodContractLabel, methodLabel } from '../lib/metrics'
 
@@ -98,14 +99,19 @@ export default function MethodLibrary() {
 
   return (
     <>
-      <div className="page-heading">
-        <div>
+      <div className="page-heading page-heading-row">
+        <div className="page-heading-copy">
           <Typography.Title level={2}>评价模块库</Typography.Title>
           <Typography.Text type="secondary">
             这里集中维护每个评价函数的公式、定义、依赖、数据输入和使用解读；流水线模板页只负责组合执行顺序
           </Typography.Text>
         </div>
-        <Link to="/pipelines">返回流水线模板</Link>
+        <SectionTabs
+          tabs={[
+            { label: '流水线模板', path: '/pipelines' },
+            { label: '评价模块库', path: '/methods' },
+          ]}
+        />
       </div>
 
       {missingDefinitions.length > 0 && (
@@ -206,6 +212,12 @@ export default function MethodLibrary() {
                 <Typography.Text className="method-definition-label">结果解读</Typography.Text>
                 <Typography.Paragraph type="secondary">{definition.interpretation}</Typography.Paragraph>
               </div>
+              {definition.limitations && (
+                <div className="method-definition-section">
+                  <Typography.Text className="method-definition-label">局限与口径</Typography.Text>
+                  <Typography.Paragraph type="secondary">{definition.limitations}</Typography.Paragraph>
+                </div>
+              )}
               <div className="method-definition-section">
                 <Typography.Text className="method-definition-label">状态影响</Typography.Text>
                 <Typography.Paragraph type="secondary">{stateEffect(selected.name)}</Typography.Paragraph>

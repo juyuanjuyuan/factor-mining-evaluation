@@ -253,6 +253,14 @@ def main() -> None:
             factors,
             1,
             10,
+            default_names,
+            decay=3,
+        )
+        assert not _matching_completed(
+            metrics_path,
+            factors,
+            1,
+            10,
             ("rank_ic", "rank_icir"),
         )
 

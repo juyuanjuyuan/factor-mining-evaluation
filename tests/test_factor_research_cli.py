@@ -232,6 +232,7 @@ def main() -> None:
         assert run["methods"] == methods_value.split(",")
         assert run["gate_outcome"] == "passed"
         assert run["run_params"] == {
+            "decay": 1,
             "signal_start": "2024-02-01",
             "signal_end": "2024-04-30",
         }
@@ -271,6 +272,7 @@ def main() -> None:
         )
         assert testing_job["status"] == "succeeded"
         assert testing_job["runs"][0]["run_params"] == {
+            "decay": 1,
             "signal_start": "2024-05-01",
             "signal_end": "2024-05-17",
         }
@@ -306,6 +308,7 @@ def main() -> None:
         assert funnel["status"] == "queued"
         assert funnel["runs"][0]["stage"] == "stage1_validity"
         assert funnel["runs"][0]["run_params"] == {
+            "decay": 1,
             "signal_start": "2024-02-01",
             "signal_end": "2024-04-30",
         }

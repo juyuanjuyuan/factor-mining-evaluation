@@ -16,9 +16,12 @@ from evaluators import (
     DEFAULT_EVALUATION_METHODS,
     EvaluationContext,
     EvaluationState,
+    HOLDING_AUDIT_COLUMNS,
+    HOLDING_AUDIT_SUMMARY,
     calculate_yearly_fitness,
     compare_ic_trend_filters,
     evaluate_fitness,
+    evaluate_holding_audit,
     evaluate_ic_horizon_decay,
     evaluate_market_cap_neutralization,
     evaluate_ic_peak_decay,
@@ -58,6 +61,7 @@ from transforms.price_limits import (
     infer_price_limit_ratio_frame,
     normalize_st_status_frame,
     price_limit_ratio_for_code,
+    reconcile_incremental_st_status,
 )
 
 
@@ -1021,6 +1025,186 @@ def test_tradability_filter() -> None:
     assert not bool(st_wide.loc[days[3], up_code])
 
 
+def test_incremental_st_status_reconciliation() -> None:
+    historical = pd.DataFrame(
+        {
+            "day": pd.to_datetime(["2026-06-26", "2026-06-26"]),
+            "code": ["600365", "600999"],
+            "是否st": [True, True],
+        }
+    )
+    incoming = pd.DataFrame(
+        {
+            "date": pd.to_datetime(
+                [
+                    "2026-06-29",
+                    "2026-06-29",
+                    "2026-06-29",
+                    "2026-07-06",
+                    "2026-07-06",
+                    "2026-07-06",
+                ]
+            ),
+            "code": [
+                "600365",
+                "600999",
+                "300087",
+                "600365",
+                "600999",
+                "300087",
+            ],
+            "pre_close_raw": [2.39, 10.0, 10.0, 2.57, 10.0, 10.0],
+            "limit_up_price": [2.51, 11.0, 12.0, 2.83, 11.0, 12.0],
+            "limit_down_price": [2.27, 9.0, 8.0, 2.31, 9.0, 8.0],
+            "st_effective_date": [
+                "2012-08-16",
+                "2010-01-01",
+                "2026-06-29",
+                "2012-08-16",
+                "2010-01-01",
+                "2026-06-29",
+            ],
+            "st_party_state": [1, 2, 2, 1, 2, 2],
+        }
+    )
+    reconciled, diagnostics = reconcile_incremental_st_status(
+        historical,
+        incoming,
+    )
+    tail = reconciled[reconciled["day"] >= pd.Timestamp("2026-06-29")]
+    wide = tail.pivot(index="day", columns="code", values="是否st")
+
+    # ST通葡's stale 2012 removal event must not override the trustworthy
+    # boundary state; after 2026-07-06 its 10% limit is no longer evidence of
+    # removal, so the state continues.
+    assert bool(wide.at[pd.Timestamp("2026-06-29"), "600365"])
+    assert bool(wide.at[pd.Timestamp("2026-07-06"), "600365"])
+    # A main-board 10% limit before the rule change is direct evidence that a
+    # previously carried ST flag should be cleared.
+    assert not bool(wide.at[pd.Timestamp("2026-06-29"), "600999"])
+    assert not bool(wide.at[pd.Timestamp("2026-07-06"), "600999"])
+    # A genuinely new event inside the increment is applied and carried.
+    assert bool(wide.at[pd.Timestamp("2026-06-29"), "300087"])
+    assert bool(wide.at[pd.Timestamp("2026-07-06"), "300087"])
+    assert diagnostics["boundary_day"] == "2026-06-26"
+    assert diagnostics["explicit_event_observations"] == 1
+
+
+def test_holding_audit() -> None:
+    """The persisted G_N rows must be the same rows used for net returns."""
+
+    days = pd.date_range("2024-01-02", periods=12, freq="B")
+    codes = [f"{number:06d}" for number in range(1, 11)]
+    daily_growth = np.linspace(0.0005, 0.005, len(codes))
+    open_prices = pd.DataFrame(
+        100 * np.exp(np.arange(len(days))[:, None] * daily_growth[None, :]),
+        index=days,
+        columns=codes,
+    )
+    close = open_prices.copy()
+    factor = pd.DataFrame(
+        np.tile(np.arange(1, len(codes) + 1, dtype=float), (len(days), 1)),
+        index=days,
+        columns=codes,
+    )
+    forward_return = open_prices.shift(-2) / open_prices.shift(-1) - 1
+    limit_ratio = pd.DataFrame(0.10, index=days, columns=codes)
+    st_status = pd.DataFrame(False, index=days, columns=codes)
+    # The highest-ranked code is ST at the first signal day's next-open entry,
+    # so the audit proves it uses the factor after tradability masking.
+    st_status.loc[days[1], "000010"] = True
+    cap = pd.DataFrame(
+        np.tile(np.arange(1, len(codes) + 1) * 1e8, (len(days), 1)),
+        index=days,
+        columns=codes,
+    )
+    industry = pd.DataFrame(
+        np.tile(["01031701"] * 5 + ["01031702"] * 5, (len(days), 1)),
+        index=days,
+        columns=codes,
+    )
+
+    with tempfile.TemporaryDirectory() as temporary:
+        context = EvaluationContext(
+            factor_name="holding_audit",
+            artifact_name="holding_audit",
+            factor=factor,
+            close=close,
+            forward_return=forward_return,
+            horizon=1,
+            n_quantiles=5,
+            output_dir=Path(temporary),
+            market_data={
+                "c": close,
+                "o": open_prices,
+                "cap": cap,
+                "industry": industry,
+                "limit": limit_ratio,
+                "st": st_status,
+            },
+        )
+        methods = resolve_evaluation_methods("holding_audit")
+        assert evaluation_method_names(methods) == (
+            "industry_market_cap_neutralize",
+            "tradability_filter",
+            "quantile_net_returns",
+            "holding_audit",
+        )
+        state = run_evaluation_methods(context, methods)
+        artifact_path = state.artifacts["holding_audit"]
+        assert artifact_path.is_file()
+        holdings = pd.read_parquet(artifact_path)
+
+    assert tuple(holdings.columns) == HOLDING_AUDIT_COLUMNS
+    assert set(holdings["group"]) == {"G5"}
+    assert not holdings["entry_is_st"].any()
+    # The ST high-rank name on the first entry date cannot remain in the G5 basket.
+    first_day = days[0].date().isoformat()
+    assert "000010" not in set(
+        holdings.loc[holdings["signal_day"] == first_day, "security_code"]
+    )
+    summary = state.details[HOLDING_AUDIT_SUMMARY]
+    group_returns = state.details["group_returns"]
+    transaction_costs = state.details["quantile_transaction_cost"]
+    assert summary.index.equals(group_returns.index)
+    assert summary.index[-1] == days[-3]
+    assert len(summary) == len(days) - 2
+    assert np.allclose(summary["top_group_net_return"], group_returns["G5"])
+    assert np.allclose(
+        summary["top_group_gross_return"] - summary["top_group_transaction_cost"],
+        group_returns["G5"],
+    )
+    assert np.allclose(summary["top_group_transaction_cost"], transaction_costs["G5"])
+    assert int(summary["top_group_position_count"].sum()) == len(holdings)
+    assert state.metrics["holding_audit_signal_day_count"] == len(summary)
+    assert state.metrics["holding_audit_position_count"] == len(holdings)
+
+    no_dependency_context = EvaluationContext(
+        factor_name="holding_audit_dependency",
+        artifact_name="holding_audit_dependency",
+        factor=factor,
+        close=close,
+        forward_return=forward_return,
+        horizon=1,
+        n_quantiles=5,
+        output_dir=Path("."),
+        market_data={
+            "c": close,
+            "o": open_prices,
+            "cap": cap,
+            "industry": industry,
+            "limit": limit_ratio,
+            "st": st_status,
+        },
+    )
+    try:
+        run_evaluation_methods(no_dependency_context, (evaluate_holding_audit,))
+    except ValueError as exc:
+        assert "industry_market_cap_neutralize" in str(exc)
+    else:  # pragma: no cover - documents that declared dependencies stay enforced.
+        raise AssertionError("holding_audit must require prior portfolio construction")
+
+
 def test_engine_integration() -> None:
     rng = np.random.default_rng(55)
     days = pd.date_range("2024-01-02", periods=45, freq="B")
@@ -1143,6 +1327,104 @@ def test_engine_integration() -> None:
         } <= set(yearly)
         assert "fitness" in fitness_result["metrics"]
 
+        # A bounded run keeps its final signal only when its next-open entry
+        # and exit price are observable.  That final t+1 must still use the
+        # *full* close/ST timeline for the entry filter; otherwise an ST name
+        # can leak solely on the final audit date.
+        audit_close = pd.DataFrame(
+            np.tile(np.arange(1, len(codes) + 1, dtype=float), (len(days), 1)),
+            index=days,
+            columns=codes,
+        )
+        audit_open = audit_close.copy()
+        audit_close.to_parquet(root / "audit_close_df.pq")
+        audit_open.to_parquet(root / "audit_open_df.pq")
+        pd.DataFrame(1e8, index=days, columns=codes).to_parquet(
+            root / "audit_market_cap_df.pq"
+        )
+        pd.DataFrame(0.10, index=days, columns=codes).to_parquet(
+            root / "audit_limit_ratio_df.pq"
+        )
+        pd.DataFrame(
+            {
+                "trade_date": np.repeat(days, len(codes)),
+                "security_code": codes * len(days),
+                "industry_l1_code": np.tile(
+                    ["01031701"] * 10 + ["01031702"] * 10,
+                    len(days),
+                ),
+            }
+        ).to_parquet(root / "audit_industry.parquet")
+        # signal_end=days[25] keeps days[23] as the final signal for H=1.
+        # Its next-open entry is days[24], where the otherwise top-residual
+        # code must be eliminated rather than leaking into the audit.
+        pd.DataFrame(
+            {
+                "day": [days[24]],
+                "code": ["000020"],
+                "是否st": [True],
+            }
+        ).to_parquet(root / "audit_st_status_df.pq")
+        audit_result = evaluate_factor_expression(
+            factor_name="bounded_holding_audit",
+            expression="rank_cs(c)",
+            data_dir=root,
+            output_dir=root / "bounded_holding_audit",
+            file_names={
+                "c": "audit_close_df.pq",
+                "o": "audit_open_df.pq",
+                "cap": "audit_market_cap_df.pq",
+                "limit": "audit_limit_ratio_df.pq",
+                "st": "audit_st_status_df.pq",
+                "industry": "audit_industry.parquet",
+            },
+            evaluation_methods=resolve_evaluation_methods("holding_audit"),
+            signal_start=days[10],
+            signal_end=days[25],
+        )
+        assert audit_result["evaluation_methods"] == [
+            "industry_market_cap_neutralize",
+            "tradability_filter",
+            "quantile_net_returns",
+            "holding_audit",
+        ]
+        assert '"holding_audit":"details/' in audit_result["metrics"][
+            "evaluation_artifacts"
+        ]
+        audited_holdings = pd.read_parquet(audit_result["artifact_paths"]["holding_audit"])
+        assert not audited_holdings["entry_is_st"].any()
+        final_signal = days[23].date().isoformat()
+        assert "000020" not in set(
+            audited_holdings.loc[
+                audited_holdings["signal_day"] == final_signal,
+                "security_code",
+            ]
+        )
+
+        # A full-history run keeps the source factor's natural unlabelled tail,
+        # while quantile_net_returns omits those dates.  The audit must follow
+        # the emitted portfolio dates instead of demanding nonexistent future
+        # entry/exit opens for the final horizon+1 factor rows.
+        full_audit_result = evaluate_factor_expression(
+            factor_name="full_history_holding_audit",
+            expression="rank_cs(c)",
+            data_dir=root,
+            output_dir=root / "full_history_holding_audit",
+            file_names={
+                "c": "audit_close_df.pq",
+                "o": "audit_open_df.pq",
+                "cap": "audit_market_cap_df.pq",
+                "limit": "audit_limit_ratio_df.pq",
+                "st": "audit_st_status_df.pq",
+                "industry": "audit_industry.parquet",
+            },
+            evaluation_methods=resolve_evaluation_methods("holding_audit"),
+        )
+        full_audited_holdings = pd.read_parquet(
+            full_audit_result["artifact_paths"]["holding_audit"]
+        )
+        assert full_audited_holdings["signal_day"].max() == days[-3].date().isoformat()
+
 
 def main() -> None:
     assert evaluation_method_names(DEFAULT_EVALUATION_METHODS) == (
@@ -1163,6 +1445,8 @@ def main() -> None:
     test_top_quantiles_and_rolling_evaluators()
     test_yearly_fitness_uses_annualized_partial_years_turnover_and_drawdown_penalty()
     test_tradability_filter()
+    test_incremental_st_status_reconciliation()
+    test_holding_audit()
     test_engine_integration()
     print("extended evaluation modules passed")
 

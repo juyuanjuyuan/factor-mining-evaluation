@@ -34,6 +34,7 @@ from evaluators import (
 )
 from evaluators.base import latest_versioned_key
 from returns import RETURN_DEFINITION, calculate_forward_open_return
+from transforms.linear_decay import apply_linear_decay, validate_linear_decay_window
 from transforms.price_limits import normalize_st_status_frame
 
 
@@ -869,15 +870,18 @@ def evaluate_wide(
     open_prices: pd.DataFrame,
     horizon: int = 1,
     n_quantiles: int = 10,
+    decay: int = 1,
 ) -> tuple[pd.Series, pd.DataFrame, int]:
     """Evaluate a factor against the canonical next-open-to-open label."""
 
     horizon = _positive_int(horizon, "horizon")
     n_quantiles = _positive_int(n_quantiles, "n_quantiles")
+    decay = validate_linear_decay_window(decay)
     factor = factor.reindex(
         index=open_prices.index,
         columns=open_prices.columns,
     )
+    factor = apply_linear_decay(factor, decay)
     future_return = calculate_forward_open_return(open_prices, horizon)
     context = EvaluationContext(
         factor_name="compatibility_evaluation",
@@ -888,6 +892,7 @@ def evaluate_wide(
         horizon=horizon,
         n_quantiles=n_quantiles,
         output_dir=Path.cwd(),
+        decay=decay,
     )
     state = run_evaluation_methods(
         context,
@@ -953,6 +958,7 @@ def render_test_code(
     output_dir: Path,
     horizon: int,
     n_quantiles: int,
+    decay: int,
     file_names: Mapping[str, str],
     evaluation_methods: tuple[str, ...],
     signal_start: str | None,
@@ -988,6 +994,7 @@ DATA_DIR = Path({str(data_dir)!r})
 OUTPUT_DIR = Path({str(output_dir)!r})
 HORIZON = {horizon!r}
 N_QUANTILES = {n_quantiles!r}
+DECAY = {decay!r}
 FILE_NAMES = {dict(file_names)!r}
 EVALUATION_METHODS = {evaluation_methods!r}
 SIGNAL_START = {signal_start!r}
@@ -1007,6 +1014,7 @@ result = evaluate_factor_expression(
     output_dir=OUTPUT_DIR,
     horizon=HORIZON,
     n_quantiles=N_QUANTILES,
+    decay=DECAY,
     file_names=FILE_NAMES,
     # Execute the archived pipeline exactly as ordered; it may repeat methods
     # (e.g. rank_ic before and after market_cap_neutralize).
@@ -1046,6 +1054,7 @@ def evaluate_factor_expression(
     output_dir: str | Path,
     horizon: int = 1,
     n_quantiles: int = 10,
+    decay: int = 1,
     file_names: Mapping[str, str] | None = None,
     preloaded_data: Mapping[str, pd.DataFrame] | None = None,
     evaluation_methods: Iterable[EvaluationMethod] | None = None,
@@ -1056,6 +1065,7 @@ def evaluate_factor_expression(
 
     horizon = _positive_int(horizon, "horizon")
     n_quantiles = _positive_int(n_quantiles, "n_quantiles")
+    decay = validate_linear_decay_window(decay)
     selected_methods = tuple(
         DEFAULT_EVALUATION_METHODS
         if evaluation_methods is None
@@ -1082,6 +1092,7 @@ def evaluate_factor_expression(
         output_dir=output_dir,
         horizon=horizon,
         n_quantiles=n_quantiles,
+        decay=decay,
         file_names=resolved_files,
         evaluation_methods=selected_method_names,
         signal_start=str(signal_start) if signal_start is not None else None,
@@ -1116,6 +1127,7 @@ def evaluate_factor_expression(
         index=data["c"].index,
         columns=data["c"].columns,
     )
+    source_factor = apply_linear_decay(source_factor, decay)
     forward_return = calculate_forward_open_return(data["o"], horizon)
     factor, evaluation_close, forward_return, sample_metadata = restrict_evaluation_window(
         source_factor,
@@ -1134,6 +1146,7 @@ def evaluate_factor_expression(
         horizon=horizon,
         n_quantiles=n_quantiles,
         output_dir=output_dir,
+        decay=decay,
         expression=expression,
         market_data=data,
         source_factor=source_factor,
@@ -1163,6 +1176,7 @@ def evaluate_factor_expression(
         "horizon": horizon,
         "return_definition": RETURN_DEFINITION,
         "n_quantiles": n_quantiles,
+        "decay": decay,
         "evaluation_methods": ",".join(selected_method_names),
         "evaluation_details": json.dumps(
             {

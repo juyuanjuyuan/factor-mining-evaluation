@@ -20,7 +20,10 @@ import pandas as pd
 
 import _bootstrap  # noqa: F401
 from paths import DATA_DIR, PROJECT_ROOT
-from transforms.price_limits import infer_price_limit_ratio_frame
+from transforms.price_limits import (
+    infer_price_limit_ratio_frame,
+    reconcile_incremental_st_status,
+)
 
 
 REQUIRED_COLUMNS = {
@@ -167,7 +170,7 @@ def main() -> int:
         "rebase_scale_min": float(rebase_scale.min()),
         "rebase_scale_max": float(rebase_scale.max()),
         "suspended_rows_normalized_to_nan": suspended_rows,
-        "st_conflicts_resolved_by_latest_extract": True,
+        "st_tail_reconciled_from_boundary_state": True,
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     if not args.apply:
@@ -223,24 +226,18 @@ def main() -> int:
         )
         outputs[filename] = pd.concat([historical, appended])
 
-    # The project consumes ST data as a long table.  The new extract is complete
-    # for its dates, so remove old rows from the first incoming date onward and
-    # replace them with the latest source, including explicit False values.
+    # The project consumes ST data as a long table.  Do not copy incoming
+    # ``is_st`` blindly: the vendor event extract can omit older implementations
+    # and removals.  Reconcile the new tail against the last trustworthy daily
+    # state, exact exchange price limits, and only newly effective events.
     st_path = data_dir / "st_status_df.pq"
     old_st = pd.read_parquet(st_path).copy()
-    old_st["day"] = pd.to_datetime(old_st["day"]).dt.tz_localize(None).dt.normalize()
-    old_st["code"] = old_st["code"].astype(str).str.zfill(6)
-    old_st = old_st[old_st["day"] < incoming_dates.min()]
-    new_st = pd.DataFrame(
-        {
-            "day": incoming["date"],
-            "code": incoming["code"],
-            "是否st": incoming["is_st"].astype(bool),
-        }
+    reconciled_st, st_diagnostics = reconcile_incremental_st_status(
+        old_st,
+        incoming,
     )
-    outputs["st_status_df.pq"] = pd.concat([old_st, new_st], ignore_index=True).sort_values(
-        ["day", "code"]
-    )
+    outputs["st_status_df.pq"] = reconciled_st
+    summary["st_reconciliation"] = st_diagnostics
 
     # Preserve every incoming source field, including raw prices, exchange,
     # adjustment factors, statuses and ST-effective metadata.

@@ -1,0 +1,15 @@
+{
+  "repaired_at": "2026-07-31T23:23:22+08:00",
+  "status_path": "/Users/huangjuyuan/Desktop/因子挖掘:评价/data/st_status_df.pq",
+  "backup_path": "/Users/huangjuyuan/Desktop/因子挖掘:评价/data/manifests/st_status_df_before_20260731_repair.pq",
+  "market_source": "/Users/huangjuyuan/Desktop/因子挖掘:评价/data/company_market_daily.parquet",
+  "increment_start_day": "2026-06-29",
+  "increment_end_day": "2026-07-10",
+  "boundary_day": "2026-06-26",
+  "limit_inferred_observations": 15905,
+  "explicit_event_observations": 3,
+  "rebuilt_rows": 52040,
+  "latest_st_count": 209,
+  "latest_name_st_count": 209,
+  "latest_name_st_false_negatives": 0
+}

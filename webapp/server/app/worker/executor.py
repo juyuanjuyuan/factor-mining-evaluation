@@ -1,4 +1,4 @@
-"""Long-lived child process that preloads market matrices once."""
+"""Long-lived child process with mtime-aware market-data preloading."""
 
 from __future__ import annotations
 
@@ -9,6 +9,23 @@ import traceback
 from pathlib import Path
 from queue import Empty
 from typing import Any
+
+
+def _data_signature(data_dir: str) -> tuple[tuple[str, int, int], ...]:
+    """Return a cheap signature for every configured market-data input."""
+
+    from engine import DEFAULT_FILES
+
+    root = Path(data_dir)
+    signature = []
+    for filename in sorted(set(DEFAULT_FILES.values())):
+        path = root / filename
+        if path.is_file():
+            stat = path.stat()
+            signature.append((filename, stat.st_mtime_ns, stat.st_size))
+        else:
+            signature.append((filename, -1, -1))
+    return tuple(signature)
 
 
 def _load_all(data_dir: str) -> dict[str, Any]:
@@ -43,6 +60,7 @@ def worker_main(command_queue: Any, event_queue: Any, data_dir: str) -> None:
     os.environ.setdefault("MPLCONFIGDIR", "/private/tmp/matplotlib")
     try:
         preloaded = _load_all(data_dir)
+        data_signature = _data_signature(data_dir)
         event_queue.put({"type": "ready"})
     except BaseException:
         event_queue.put({"type": "startup_failed", "error": traceback.format_exc()})
@@ -72,6 +90,13 @@ def worker_main(command_queue: Any, event_queue: Any, data_dir: str) -> None:
         run_id = command["id"]
         event_queue.put({"type": "started", "run_id": run_id})
         try:
+            current_signature = _data_signature(data_dir)
+            if current_signature != data_signature:
+                # Reload every core matrix together so a changed close axis
+                # cannot leave other cached inputs on stale axes. Evaluator-only
+                # inputs are loaded lazily again below when the run needs them.
+                preloaded = _load_all(data_dir)
+                data_signature = current_signature
             run_params = command.get("run_params") or {}
             expression = command["expression"]
             selected_methods = [
@@ -128,6 +153,7 @@ def worker_main(command_queue: Any, event_queue: Any, data_dir: str) -> None:
                 output_dir=command["output_dir"],
                 horizon=command["horizon"],
                 n_quantiles=command["n_quantiles"],
+                decay=run_params.get("decay", 1),
                 preloaded_data=preloaded,
                 # Execute the stored pipeline exactly as ordered — it may
                 # legitimately repeat a method (IC before/after neutralization).

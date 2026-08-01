@@ -189,14 +189,17 @@ def evaluate_tradability_filter(state: EvaluationState) -> None:
     """
 
     data = state.context.market_data
-    if data is None or not {"o", "limit", "st"} <= set(data):
+    if data is None or not {"c", "o", "limit", "st"} <= set(data):
         raise ValueError(
-            "Tradability filter requires the o/limit/st matrices in market_data"
+            "Tradability filter requires the c/o/limit/st matrices in market_data"
         )
     masked_factor, detail, summary = mask_untradeable_entries(
         state.factor,
         data["o"],
-        state.context.close,
+        # ``context.close`` is deliberately restricted to the signal window.
+        # The entry check needs the full close timeline so that the final
+        # retained signal can still inspect its t+1 open/ST status.
+        data["c"],
         data["limit"],
         data["st"],
     )

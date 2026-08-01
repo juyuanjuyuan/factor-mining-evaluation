@@ -5,6 +5,7 @@ export type MethodDefinition = {
   definition: string
   formula: string
   interpretation: string
+  limitations?: string
 }
 
 /**
@@ -129,6 +130,23 @@ r^{\mathrm{net}}_{G_g,t} &= r_{G_g,t}-B_{g,t}c_{\mathrm{buy}}-S_{g,t}c_{\mathrm{
       '每个交易日使用与 quantile_returns 相同的因子排序和分组规则生成 G1 到 GN 等权目标权重；由相邻目标权重差计算买入换手、卖出换手和单边换手，并从当日分位组毛收益中扣除交易成本。买入按单边万分之 12.5（0.00125）扣费，卖出按单边万分之 17.5（0.00175）扣费；一单位完整买卖的成本为千分之 3（0.003）。输出净收益到标准 group_returns 明细，另输出 quantile_turnover 与 quantile_transaction_cost 诊断明细。',
     interpretation: '净收益可直接交给 quantile_cumulative、quantile_plot 和滚动风险方法；卖出成本高于买入，用固定费率反映卖出端税费与统一执行缓冲。该规则不按佣金、税费等项目拆分，也不随成交规模或价格变化。',
   },
+  holding_audit: {
+    label: '查看历史持仓',
+    category: '组合诊断',
+    description: '将最高分位组的每日等权目标持仓写入压缩审计产物，供运行详情页按信号日分页回看。',
+    formula: String.raw`\begin{aligned}
+\mathcal V_t &= \{i:\ f_{i,t}\in\mathbb R,\ R^{(H)}_{i,t}\in\mathbb R\} \\
+g_{i,t} &= \left\lfloor\frac{(\operatorname{rank}_i(f_{i,t})-1)N}{|\mathcal V_t|}\right\rfloor+1 \\
+\mathcal H_t &= \{i\in\mathcal V_t:\ g_{i,t}=N\},\qquad
+w_{i,t}=\frac{1}{|\mathcal H_t|}
+\end{aligned}`,
+    definition:
+      '依赖 industry_market_cap_neutralize、tradability_filter 和 quantile_net_returns，必须排在三者之后。读取当时的 state.factor，因此仓位是联合行业/市值中性化和买入日可交易性过滤后的结果；在因子值和 H 日开盘收益均有限的股票上，使用与 quantile_net_returns 完全相同的 rank(method=first) 与分组公式。仅持久化最高组 GN 的信号日、次日开盘买卖日期、代码、组内排名、等权目标权重、中性化后因子、市值、行业、开盘价格、未来开盘收益及买入日 ST 状态；同时写出逐日仓位数、毛收益、交易成本和净收益，以与组收益核验。网页只按所选信号日分页读取 Parquet，并用本地证券、行业对照表补充名称，原始代码仍保留。',
+    interpretation:
+      '用于解释回测中最高分位组在某一历史信号日实际由哪些股票构成，并核对这些股票的等权平均收益与报告的 GN 净收益一致。它不改变因子、分组收益或任何筛选门槛。',
+    limitations:
+      '这是历史回测持仓，不是当前可直接下单的最终仓单。成员资格为了与已报告收益一致而要求未来收益可得；可交易性只检查 t+1 买入日，不模拟卖出日流动性、滑点、冲击成本或账户约束。行业名称对应信号日行业代码；公司名称是证券主表中的当前或退市前最后简称，不是完整的信号日历次更名记录。',
+  },
   fitness: {
     label: '年度 Fitness',
     category: '组合诊断',
@@ -244,8 +262,8 @@ g_{i,t+1} &= \frac{\operatorname{open}_{i,t+1}}{\operatorname{close}_{i,t}} - 1 
 &\Longrightarrow f_{i,t}\leftarrow\mathrm{NaN}
 \end{aligned}`,
     definition:
-      '检查因子日 t 的下一交易日 t+1；用代码板块推导的涨跌幅限制矩阵 L 判断开盘是否触及涨跌停，并将触线或 ST 样本从当前工作因子中屏蔽。',
-    interpretation: '覆盖开盘封板后盘中打开的入场不可成交情形；涨跌停价仍是基于复权开盘/收盘和板块限制的代理口径，不检查退出日可交易性。',
+      '检查因子日 t 的下一交易日 t+1；用代码板块推导的涨跌幅限制矩阵 L 判断开盘是否触及涨跌停，并将触线或买入日 point-in-time ST 样本从当前工作因子中屏蔽。ST 增量数据从更新边界前一日状态延续，仅应用区间内新事件；2026-07-06 前还用交易所精确 5%/10% 限价校验。',
+    interpretation: '覆盖开盘封板后盘中打开的入场不可成交情形。2026-07-06 起主板 ST 与普通股票均使用 10% 涨跌幅，ST 必须依赖历史状态而不能再由限价单独推断；开盘封板判断仍是基于复权开盘/收盘和板块限制的代理口径，且不检查退出日可交易性。',
   },
   top_quantile_performance: {
     label: '最高组表现分析',

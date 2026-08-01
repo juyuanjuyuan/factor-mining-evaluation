@@ -120,6 +120,7 @@ def evaluate_prefix_truncation_consistency(state: EvaluationState) -> None:
             "Prefix-truncation consistency requires expression and market_data in context"
         )
     from engine import evaluate_expression
+    from transforms.linear_decay import apply_linear_decay
 
     expression = state.context.expression
     source_factor = (
@@ -140,10 +141,11 @@ def evaluate_prefix_truncation_consistency(state: EvaluationState) -> None:
     )
 
     def rebuild_factor(prefix: Mapping[str, pd.DataFrame]) -> pd.DataFrame:
-        return evaluate_expression(expression, prefix).replace(
+        raw_factor = evaluate_expression(expression, prefix).replace(
             [np.inf, -np.inf],
             np.nan,
         )
+        return apply_linear_decay(raw_factor, state.context.decay)
 
     detail, summary = prefix_truncation_consistency_test(
         source_factor,

@@ -74,6 +74,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--quantiles", type=int, default=10)
     parser.add_argument(
+        "--decay",
+        type=int,
+        default=1,
+        help="post-expression linear decay window (positive integer; 1 preserves prior behavior)",
+    )
+    parser.add_argument(
         "--methods",
         default="default",
         help=(
@@ -157,6 +163,7 @@ def _matching_completed(
     horizon: int,
     quantiles: int,
     method_names: tuple[str, ...],
+    decay: int = 1,
 ) -> set[str]:
     if not metrics_path.is_file():
         return set()
@@ -189,6 +196,11 @@ def _matching_completed(
             and str(row.expression) == expected[name]
             and int(row.horizon) == horizon
             and int(row.n_quantiles) == quantiles
+            and (
+                1
+                if not hasattr(row, "decay") or pd.isna(getattr(row, "decay"))
+                else getattr(row, "decay")
+            ) == decay
             and str(row.return_definition) == RETURN_DEFINITION
             and row_methods == requested_methods
         ):
@@ -229,6 +241,8 @@ def _dry_run_payload(
 
 def main() -> int:
     args = build_parser().parse_args()
+    if args.decay < 1:
+        raise ValueError("decay must be a positive integer")
     data_dir = args.data_dir.expanduser().resolve()
     registry_file = args.registry_file.expanduser().resolve()
     output_dir_arg = args.output_dir or (
@@ -272,6 +286,7 @@ def main() -> int:
                     "data_dir": str(data_dir),
                     "output_dir": str(output_dir),
                     "evaluation_methods": list(method_names),
+                    "decay": args.decay,
                     "return_definition": RETURN_DEFINITION,
                     "factors": _dry_run_payload(
                         factors,
@@ -294,6 +309,7 @@ def main() -> int:
             args.horizon,
             args.quantiles,
             method_names,
+            args.decay,
         )
     )
     pending = tuple(
@@ -358,6 +374,7 @@ def main() -> int:
                 output_dir=output_dir,
                 horizon=args.horizon,
                 n_quantiles=args.quantiles,
+                decay=args.decay,
                 file_names=file_names,
                 preloaded_data=shared_data,
                 evaluation_methods=evaluation_methods,
@@ -373,6 +390,7 @@ def main() -> int:
                 "elapsed_seconds": elapsed,
                 "error": "",
                 "expression": factor.expression,
+                "decay": args.decay,
             }
             _append_batch_status(status_path, status_record)
             print(
@@ -388,6 +406,7 @@ def main() -> int:
                         "gn_final_cumulative": metrics.get(
                             "gn_final_cumulative"
                         ),
+                        "decay": metrics.get("decay"),
                     },
                     ensure_ascii=False,
                     allow_nan=True,
@@ -411,6 +430,7 @@ def main() -> int:
                     "elapsed_seconds": elapsed,
                     "error": failure["error"],
                     "expression": factor.expression,
+                    "decay": args.decay,
                 },
             )
             print(

@@ -24,6 +24,22 @@
 | `limit_ratio_df.pq` | `limit` | 按代码板块推导的常规涨跌幅限制比例宽表 |
 | `st_status_df.pq` | `st` | ST 状态；源文件可为 `day/code/是否st` 长表，加载时规范为布尔宽表 |
 | `行业数据.parquet` | `industry`（仅 evaluator） | 动态一级行业长表：`trade_date/security_code/industry_l1_code` |
+| `security_name_reference.parquet` | — | 持仓展示用证券代码名称表；覆盖历史上市/退市证券，名称为当前或退市前最后简称 |
+| `industry_l1_name_reference.parquet` | — | 持仓展示用中信一级行业代码名称表 |
+
+两张展示对照表由
+`scripts/data/build_holding_reference_tables.py` 生成，构建来源和覆盖统计记录在
+`data/manifests/holding_reference_manifest.json`。证券主表不包含完整的历次更名有效期，因此
+`security_name_reference.parquet` 不能被解释为信号日的 point-in-time 简称；网页明确显示为
+“当前或退市前最后简称”。行业名称只翻译持仓中已经按信号日确定的行业代码，不参与因子计算、
+中性化或收益标签。
+
+增量更新 `st_status_df.pq` 时不能直接把 `equ_inst_sstate` 的最后事件当作当前状态：该事件
+历史可能遗漏较早的实施/撤销记录。`scripts/data/merge_company_market_incremental.py` 会从
+更新边界前一交易日的已验证状态开始，2026-07-06 前结合交易所精确 5%/10% 涨跌停价，
+仅应用增量区间内实际生效的状态事件，并在 2026-07-06 主板风险警示股涨跌幅统一改为
+10% 后延续已确认状态。`scripts/data/repair_st_status_tail.py` 可对已写入的增量尾部执行
+同口径修复；真实数据合同还会用证券简称对最新状态做保守的漏标校验。
 
 ## Price-limit ratio 来源
 

@@ -136,6 +136,14 @@ def main() -> None:
             horizon=1,
             n_quantiles=10,
         )
+        assert matching_stage_record(
+            stage_dir,
+            factor,
+            FUNNEL_STAGES[1],
+            horizon=1,
+            n_quantiles=10,
+            decay=3,
+        ) is None
         detail = next((stage_dir / "details").iterdir())
         detail.write_text("", encoding="utf-8")
         assert matching_stage_record(
