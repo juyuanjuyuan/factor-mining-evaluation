@@ -363,7 +363,7 @@ export function RunResultView({ runId, showAnchors = true }: { runId: string; sh
             type="info"
             showIcon
             icon={<Spin size="small" />}
-            message={data.status === 'running' ? '正在计算，页面会自动刷新…' : '排队等待中，页面会自动刷新…'}
+            title={data.status === 'running' ? '正在计算，页面会自动刷新…' : '排队等待中，页面会自动刷新…'}
             className="section-card"
           />
         )}
@@ -371,7 +371,7 @@ export function RunResultView({ runId, showAnchors = true }: { runId: string; sh
           <Alert
             type="error"
             showIcon
-            message="运行失败"
+            title="运行失败"
             description={<pre className="error-text">{data.error}</pre>}
             className="section-card"
           />

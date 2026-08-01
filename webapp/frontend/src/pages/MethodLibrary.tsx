@@ -119,7 +119,7 @@ export default function MethodLibrary() {
           type="error"
           showIcon
           className="method-definition-warning"
-          message="存在未完成网页定义的评价模块"
+          title="存在未完成网页定义的评价模块"
           description={`请补充：${missingDefinitions.map((method) => method.name).join('、')}`}
         />
       )}
@@ -247,7 +247,7 @@ export default function MethodLibrary() {
             <Alert
               type="error"
               showIcon
-              message="定义缺失"
+              title="定义缺失"
               description="该方法已经注册，但尚未补充数学公式、方法定义和中文解读。"
             />
           )}

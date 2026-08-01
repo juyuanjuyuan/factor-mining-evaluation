@@ -343,7 +343,7 @@ export function RunConfigDrawer({
               type="info"
               showIcon
               icon={<HistoryOutlined />}
-              message="已沿用上次提交的配置"
+              title="已沿用上次提交的配置"
               action={
                 <Button size="small" type="link" onClick={applyDefaultTemplate}>
                   改回默认模板
@@ -409,7 +409,7 @@ export function RunConfigDrawer({
                   current={-1}
                   items={(funnelStageCatalog.data || []).map((stage) => ({
                     title: STAGE_INFO[stage.name]?.label || stage.name,
-                    description: (
+                    content: (
                       <div>
                         <div>{STAGE_INFO[stage.name]?.hint}</div>
                         <div className="funnel-stage-methods">
@@ -598,7 +598,7 @@ export function RunConfigDrawer({
                 className="run-config-aside-note"
                 type="warning"
                 showIcon
-                message="包含代理数据口径因子"
+                title="包含代理数据口径因子"
                 description="结果会保留该因子的代理说明。与真实输入因子比较前请先确认数据口径一致。"
               />
             )}
@@ -607,7 +607,7 @@ export function RunConfigDrawer({
                 className="run-config-aside-note"
                 type="info"
                 showIcon
-                message="组合收益口径：毛收益"
+                title="组合收益口径：毛收益"
                 description={
                   supportsNetReturns
                     ? '当前流水线使用「分组收益」。需要扣除显性交易费率时，请换成「分组净收益」，再运行累计收益和图表步骤。'
@@ -620,7 +620,7 @@ export function RunConfigDrawer({
                 className="run-config-aside-note"
                 type="info"
                 showIcon
-                message="组合收益口径：净收益"
+                title="组合收益口径：净收益"
                 description="会扣除已配置的显性交易费率；滑点、买卖价差和市场冲击不在此口径内。"
               />
             )}
@@ -629,7 +629,7 @@ export function RunConfigDrawer({
                 className="run-config-aside-note"
                 type="info"
                 showIcon
-                message="漏斗的组合收益阶段使用毛收益"
+                title="漏斗的组合收益阶段使用毛收益"
                 description="第 3 阶段要求分组收益作为组合检验输入。提交前可在流水线模板页核对每个阶段的执行顺序。"
               />
             )}

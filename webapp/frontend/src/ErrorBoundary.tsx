@@ -22,7 +22,7 @@ export class ErrorBoundary extends Component<
           <Alert
             type="error"
             showIcon
-            message="页面渲染失败"
+            title="页面渲染失败"
             description={this.state.error.message}
             action={<Button onClick={() => window.location.reload()}>重新加载</Button>}
           />

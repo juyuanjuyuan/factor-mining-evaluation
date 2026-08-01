@@ -660,7 +660,7 @@ export default function FactorLibrary({ mode }: FactorLibraryProps) {
           </Tag>
         )}
         {correlation.isError ? (
-          <Alert type="error" showIcon message="无法读取因子相关性矩阵" description={correlation.error.message} />
+          <Alert type="error" showIcon title="无法读取因子相关性矩阵" description={correlation.error.message} />
         ) : correlation.data?.factor_names.length ? (
           <Table<CorrelationRow>
             size="small"
@@ -704,7 +704,7 @@ export default function FactorLibrary({ mode }: FactorLibraryProps) {
           <Alert
             type="error"
             showIcon
-            message="无法读取分段相关性"
+            title="无法读取分段相关性"
             description={pairCorrelation.error.message}
           />
         ) : (
@@ -721,19 +721,20 @@ export default function FactorLibrary({ mode }: FactorLibraryProps) {
                   title="最大分段绝对相关性"
                   value={pairCorrelation.data?.max_abs_correlation ?? '暂无'}
                   precision={pairCorrelation.data?.max_abs_correlation == null ? undefined : 4}
-                  valueStyle={
-                    pairCorrelation.data?.max_abs_correlation != null &&
-                    pairCorrelation.data.max_abs_correlation > pairCorrelation.data.threshold
-                      ? { color: '#cf1322' }
-                      : undefined
-                  }
+                  styles={{
+                    content:
+                      pairCorrelation.data?.max_abs_correlation != null &&
+                      pairCorrelation.data.max_abs_correlation > pairCorrelation.data.threshold
+                        ? { color: '#cf1322' }
+                        : undefined,
+                  }}
                 />
               </Card>
               <Card size="small" style={{ flex: '1 1 260px' }}>
                 <Statistic
                   title="超过阈值的窗口数量"
                   value={pairCorrelation.data?.violation_window_count ?? '暂无'}
-                  valueStyle={pairCorrelation.data?.violation_window_count ? { color: '#cf1322' } : undefined}
+                  styles={{ content: pairCorrelation.data?.violation_window_count ? { color: '#cf1322' } : undefined }}
                 />
               </Card>
             </Flex>

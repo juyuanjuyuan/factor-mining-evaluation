@@ -411,7 +411,7 @@ export default function ModelTests() {
         className="model-leakage-note"
         type="info"
         showIcon
-        message="训练与测试严格隔离"
+        title="训练与测试严格隔离"
         description="模型只允许在训练阶段调整。提交样本外测试后，因子定义、权重、日期区间和评价流水线都会锁定；测试窗口末尾会按持有期裁去无法在窗口内平仓的信号日。"
       />
 
@@ -467,7 +467,7 @@ export default function ModelTests() {
               className="model-locked-note"
               type="warning"
               showIcon
-              message="此模型已经提交样本外测试，配置已锁定"
+              title="此模型已经提交样本外测试，配置已锁定"
               description="若要研究新的权重，请新建一个模型会话并重新使用训练集；不要将已见的测试表现用于当前模型调参。"
             />
           )}
@@ -501,7 +501,7 @@ export default function ModelTests() {
             {timeline.isLoading ? (
               <Typography.Text type="secondary">正在读取行情数据的交易日范围…</Typography.Text>
             ) : timeline.isError ? (
-              <Alert type="error" showIcon message="无法读取可用交易日范围" description={timeline.error.message} />
+              <Alert type="error" showIcon title="无法读取可用交易日范围" description={timeline.error.message} />
             ) : splitPosition !== null && timeline.data ? (
               <div className="model-timeline">
                 <div className="model-timeline-summary">
@@ -520,7 +520,7 @@ export default function ModelTests() {
                 />
               </div>
             ) : (
-              <Alert type="warning" showIcon message="当前行情数据没有可用于时间切片的交易日" />
+              <Alert type="warning" showIcon title="当前行情数据没有可用于时间切片的交易日" />
             )}
             <Typography.Paragraph type="secondary" className="model-field-hint">
               这条时间轴只使用真实交易日。拖动分界点会同时更新两个样本的日期；每段至少保留“持有期 + 2”个交易日，系统会在末尾再裁去无法在本段内完成开平仓的信号日。
