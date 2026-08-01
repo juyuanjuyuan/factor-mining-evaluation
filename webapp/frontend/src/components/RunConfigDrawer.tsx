@@ -242,7 +242,7 @@ export function RunConfigDrawer({
           className="drawer-callout"
           type="warning"
           showIcon
-          message="本次包含代理数据口径因子"
+          title="本次包含代理数据口径因子"
           description="结果会保留该因子的代理说明。与真实输入因子的结果比较时，请先确认数据口径一致。"
         />
       )}
@@ -358,7 +358,7 @@ export function RunConfigDrawer({
               current={-1}
               items={(funnelStageCatalog.data || []).map((stage) => ({
                 title: STAGE_INFO[stage.name]?.label || stage.name,
-                description: (
+                content: (
                   <div>
                     <div>{STAGE_INFO[stage.name]?.hint}</div>
                     <div className="funnel-stage-methods">
@@ -404,7 +404,7 @@ export function RunConfigDrawer({
             className="return-basis-note"
             type="info"
             showIcon
-            message="组合收益口径：毛收益"
+            title="组合收益口径：毛收益"
             description={
               supportsNetReturns
                 ? '当前流水线使用“分组收益”。若需要在分位组收益中扣除显性交易费率，请将其替换为“分组净收益”，再运行累计收益和图表步骤。'
@@ -417,7 +417,7 @@ export function RunConfigDrawer({
             className="return-basis-note"
             type="info"
             showIcon
-            message="组合收益口径：净收益"
+            title="组合收益口径：净收益"
             description="当前流水线会扣除已配置的显性交易费率；滑点、买卖价差和市场冲击不在此口径内。"
           />
         )}
@@ -426,7 +426,7 @@ export function RunConfigDrawer({
             className="return-basis-note"
             type="info"
             showIcon
-            message="漏斗的组合收益阶段使用毛收益"
+            title="漏斗的组合收益阶段使用毛收益"
             description="第 3 阶段要求分组收益作为组合检验输入。提交前可在模板页核对每个阶段的执行顺序。"
           />
         )}

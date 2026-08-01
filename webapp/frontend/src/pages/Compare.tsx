@@ -89,7 +89,7 @@ export default function Compare() {
           type="error"
           showIcon
           className="section-card"
-          message="生成对比失败"
+          title="生成对比失败"
           description={comparison.error.message}
         />
       )}

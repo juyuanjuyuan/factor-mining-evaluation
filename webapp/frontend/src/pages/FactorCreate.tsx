@@ -176,7 +176,7 @@ export default function FactorCreate() {
                 <Alert
                   type="success"
                   showIcon
-                  message="表达式有效"
+                  title="表达式有效"
                   description={
                     <Space orientation="vertical" size={6}>
                       <Space wrap>
@@ -207,7 +207,7 @@ export default function FactorCreate() {
                 <Alert
                   type="error"
                   showIcon
-                  message="表达式无效"
+                  title="表达式无效"
                   description={(validation.error as Error).message}
                   style={{ marginBottom: 20 }}
                 />

@@ -224,7 +224,7 @@ export default function PipelineTemplates() {
               <Alert
                 type="info"
                 showIcon
-                message="标准四阶段漏斗"
+                title="标准四阶段漏斗"
                 description="阶段顺序和门槛逻辑固定；每个阶段的方法顺序、重复执行和扩展诊断均可编辑。门槛所需核心方法必须保留。"
                 style={{ marginBottom: 16 }}
               />
@@ -262,7 +262,7 @@ export default function PipelineTemplates() {
                         <Alert
                           type="warning"
                           showIcon
-                          message={STAGE_INFO[stage.name]?.hint}
+                          title={STAGE_INFO[stage.name]?.hint}
                           description={`必须按顺序保留：${stage.required_methods.map(methodLabel).join(' → ')}`}
                           style={{ marginBottom: 12 }}
                         />

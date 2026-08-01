@@ -199,7 +199,7 @@ function CampaignCard({ campaign }: { campaign: GeneticCampaign }) {
           className="gp-contract-alert"
           type="warning"
           showIcon
-          message="这是旧版自动入库 campaign"
+          title="这是旧版自动入库 campaign"
           description="旧进程会在 GP 内直接执行相关性准入。请停止后以新名称创建任务；新版只向因子库服务交接通过测试的因子，由因子库完成相关性检验与入库裁决。"
         />
       )}
@@ -208,11 +208,11 @@ function CampaignCard({ campaign }: { campaign: GeneticCampaign }) {
         current={campaignStep(campaign)}
         status={campaign.status === 'failed' ? 'error' : campaign.status === 'stopped' ? 'wait' : 'process'}
         items={[
-          { title: '训练集进化', description: currentGeneration || '等待种群计算' },
-          { title: '测试集盈利标准', description: campaign.current_stage === 'testing' ? '先筛冻结表达式' : '市值+行业中性化后的净分组收益' },
-          { title: '测试集 IC', description: '仅对盈利存活者检测' },
-          { title: '提交因子库', description: '相关性冲突时以 60 日 Sharpe 中位数、再以 Fitness 裁决替换' },
-          { title: '完成本轮', description: `${campaign.completed_cycles} 个 cycle` },
+          { title: '训练集进化', content: currentGeneration || '等待种群计算' },
+          { title: '测试集盈利标准', content: campaign.current_stage === 'testing' ? '先筛冻结表达式' : '市值+行业中性化后的净分组收益' },
+          { title: '测试集 IC', content: '仅对盈利存活者检测' },
+          { title: '提交因子库', content: '相关性冲突时以 60 日 Sharpe 中位数、再以 Fitness 裁决替换' },
+          { title: '完成本轮', content: `${campaign.completed_cycles} 个 cycle` },
         ]}
       />
       {campaign.current_generation_total && campaign.current_stage === 'running' ? (
@@ -230,7 +230,7 @@ function CampaignCard({ campaign }: { campaign: GeneticCampaign }) {
       <div className="gp-campaign-stats">
         <Statistic title="当前 cycle" value={campaign.current_cycle ?? '—'} />
         <Statistic title="测试通过" value={campaign.test_passed_count} />
-        <Statistic title="因子库已入库" value={campaign.factor_library_admitted_count} valueStyle={campaign.factor_library_admitted_count ? { color: '#008A3E' } : undefined} />
+        <Statistic title="因子库已入库" value={campaign.factor_library_admitted_count} styles={{ content: campaign.factor_library_admitted_count ? { color: '#008A3E' } : undefined }} />
         <Statistic title="因子库冲突未入库" value={campaign.factor_library_rejected_count} />
         <Statistic title="候选失败" value={campaign.failed_candidate_count} />
       </div>
@@ -360,7 +360,7 @@ export function GeneticMiningPanel({ open, onOpen, onClose }: { open: boolean; o
               </Flex>
             ),
             children: campaigns.isError ? (
-              <Alert type="error" showIcon message="无法读取遗传挖掘任务" description={campaigns.error.message} />
+              <Alert type="error" showIcon title="无法读取遗传挖掘任务" description={campaigns.error.message} />
             ) : campaigns.data?.length ? (
               <div className="gp-campaign-list">
                 {campaigns.data.map((campaign) => <CampaignCard campaign={campaign} key={campaign.campaign} />)}
@@ -385,7 +385,7 @@ export function GeneticMiningPanel({ open, onOpen, onClose }: { open: boolean; o
           className="gp-contract-alert"
           type="info"
           showIcon
-          message="冻结训练/测试边界"
+          title="冻结训练/测试边界"
           description="训练集只用于表达式进化、规范化去重和多层 Pareto HOF 排名；第一前沿优先，随后依次使用后续前沿补足冻结候选。父代锦标赛仍使用 IC 减复杂度惩罚。冻结后的表达式先用市值+行业中性化后的净分组收益筛选；仅盈利存活者再做测试集 IC 检测。两关均通过后会自动交接给因子库；若相关性冲突，因子库以同口径的 60 日窗口 Sharpe 中位数优先、同分再以 Fitness 比较，只有严格更优的候选才能替换旧正式因子，旧定义保留在测试库。"
         />
         {active && (
@@ -393,7 +393,7 @@ export function GeneticMiningPanel({ open, onOpen, onClose }: { open: boolean; o
             className="gp-contract-alert"
             type="warning"
             showIcon
-            message={`当前已有任务 ${active.campaign} 运行中`}
+            title={`当前已有任务 ${active.campaign} 运行中`}
             description="为控制宽矩阵内存占用，Webapp 同时只运行一个遗传挖掘任务。"
           />
         )}
@@ -426,7 +426,7 @@ export function GeneticMiningPanel({ open, onOpen, onClose }: { open: boolean; o
             className="gp-contract-alert"
             type="warning"
             showIcon
-            message="固定测试集反复筛选会逐渐变成验证集"
+            title="固定测试集反复筛选会逐渐变成验证集"
             description="连续挖掘适合构建候选库；若需要最终无偏结论，应另留一段不参与 GP 测试筛选的最终留出期。"
           />
           <div className="gp-parameter-grid">
