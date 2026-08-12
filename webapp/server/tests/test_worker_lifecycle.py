@@ -59,6 +59,7 @@ def write_market_data(data_dir: Path) -> None:
         "cap": pd.DataFrame(rng.uniform(1e9, 1e10, close.shape), index=index, columns=columns),
         "limit": pd.DataFrame(0.10, index=index, columns=columns),
         "st": pd.DataFrame(False, index=index, columns=columns),
+        "delisting": pd.DataFrame(False, index=index, columns=columns),
     }
     frames["industry"] = pd.DataFrame(
         {
@@ -162,9 +163,51 @@ def main() -> None:
                 methods=["tradability_filter"],
             )
             wait_until(lambda: db.get_run(post_refresh_run)["status"] == "succeeded")
-            assert (
-                db.get_run(post_refresh_run)["result"]["tradability_masked_st_obs"] == 1
+            post_refresh_result = db.get_run(post_refresh_run)["result"]
+            assert post_refresh_result["tradability_masked_st_obs"] == 2
+            assert post_refresh_result["tradability_masked_signal_st_obs"] == 1
+            assert post_refresh_result["tradability_masked_entry_st_obs"] == 1
+
+            # The independent delisting-period input is watched by the same
+            # long-lived worker cache. One true market day blocks both that
+            # day's signal and the preceding signal's next-open entry.
+            delisting_path = data_dir / "delisting_period_status_df.pq"
+            refreshed_delisting = pd.read_parquet(delisting_path)
+            refreshed_delisting.iloc[2, 1] = True
+            temporary_delisting = delisting_path.with_suffix(".refresh.pq")
+            refreshed_delisting.to_parquet(temporary_delisting)
+            temporary_delisting.replace(delisting_path)
+            _, delisting_refresh_run = add_job(
+                db,
+                settings,
+                "post_refresh_delisting_tradability",
+                expression="c",
+                methods=["tradability_filter"],
             )
+            wait_until(
+                lambda: db.get_run(delisting_refresh_run)["status"] == "succeeded"
+            )
+            delisting_result = db.get_run(delisting_refresh_run)["result"]
+            assert delisting_result["tradability_masked_delisting_obs"] == 2
+            assert delisting_result["tradability_masked_signal_delisting_obs"] == 1
+            assert delisting_result["tradability_masked_entry_delisting_obs"] == 1
+
+            amount_path = data_dir / "amount_df.pq"
+            refreshed_amount = pd.read_parquet(amount_path)
+            refreshed_amount.iloc[3, 2] = 0.0
+            temporary_amount = amount_path.with_suffix(".refresh.pq")
+            refreshed_amount.to_parquet(temporary_amount)
+            temporary_amount.replace(amount_path)
+            _, amount_refresh_run = add_job(
+                db,
+                settings,
+                "post_refresh_amount_tradability",
+                expression="c",
+                methods=["tradability_filter"],
+            )
+            wait_until(lambda: db.get_run(amount_refresh_run)["status"] == "succeeded")
+            amount_result = db.get_run(amount_refresh_run)["result"]
+            assert amount_result["tradability_masked_entry_no_trade_obs"] == 1
 
             _, industry_run = add_job(
                 db,

@@ -76,15 +76,26 @@ def normalize_st_status_frame(
         raise ValueError("ST status input must be a nonempty DataFrame")
     if {"day", "code", "是否st"} <= set(frame.columns):
         status = frame.loc[:, ["day", "code", "是否st"]].copy()
-        status["day"] = pd.to_datetime(status["day"])
-        status["code"] = status["code"].astype(str).str.zfill(6)
-        status["is_st"] = status["是否st"].astype(bool)
-        wide = status.pivot_table(
+        status["day"] = pd.to_datetime(status["day"], errors="raise").dt.normalize()
+        codes = status["code"].astype("string").str.strip()
+        if codes.isna().any() or not codes.str.fullmatch(r"\d{1,6}").all():
+            raise ValueError("ST status codes must contain one- to six-digit numbers")
+        status["code"] = codes.str.zfill(6)
+        if status.duplicated(["day", "code"]).any():
+            raise ValueError("ST status has duplicate (day, code) rows")
+        try:
+            values = status["是否st"].astype("boolean")
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "Canonical ST status must contain boolean true values only"
+            ) from exc
+        if values.isna().any() or not bool(values.eq(True).all()):
+            raise ValueError("Canonical ST status must contain true observations only")
+        status["is_st"] = values.astype(bool)
+        wide = status.pivot(
             index="day",
             columns="code",
             values="is_st",
-            aggfunc="max",
-            fill_value=False,
         )
     else:
         wide = frame.copy()
@@ -92,7 +103,12 @@ def normalize_st_status_frame(
             wide.index = pd.to_datetime(wide.index)
         wide.columns = wide.columns.astype(str).str.zfill(6)
 
-    aligned = wide.reindex(index=close.index, columns=close.columns).astype("boolean")
+    try:
+        aligned = wide.reindex(index=close.index, columns=close.columns).astype(
+            "boolean"
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError("ST matrix must contain boolean/0-1 values") from exc
     return aligned.fillna(False).astype(bool)
 
 

@@ -15,9 +15,12 @@ from funnel import (
     FUNNEL_STAGES,
     _summary_record,
     evaluate_gate,
+    factor_data_symbols,
+    funnel_evaluator_data_symbols,
     matching_stage_record,
 )
 from returns import RETURN_DEFINITION
+from evaluators.tradability import TRADABILITY_DEFINITION
 
 
 def _write_complete_result(
@@ -44,21 +47,20 @@ def _write_complete_result(
         path = f"plots/{artifact_name}.png"
         (root / path).write_bytes(b"not-empty")
         artifacts[name] = path
-    pd.DataFrame(
-        [
-            {
-                "factor_name": factor.name,
-                "artifact_name": artifact_name,
-                "expression": factor.expression,
-                "horizon": 1,
-                "n_quantiles": 10,
-                "return_definition": RETURN_DEFINITION,
-                "evaluation_methods": ",".join(stage.method_names),
-                "evaluation_details": json.dumps(details),
-                "evaluation_artifacts": json.dumps(artifacts),
-            }
-        ]
-    ).to_csv(root / "metrics.csv", index=False)
+    metrics = {
+        "factor_name": factor.name,
+        "artifact_name": artifact_name,
+        "expression": factor.expression,
+        "horizon": 1,
+        "n_quantiles": 10,
+        "return_definition": RETURN_DEFINITION,
+        "evaluation_methods": ",".join(stage.method_names),
+        "evaluation_details": json.dumps(details),
+        "evaluation_artifacts": json.dumps(artifacts),
+    }
+    if "tradability_filter" in stage.method_names:
+        metrics["tradability_definition"] = TRADABILITY_DEFINITION
+    pd.DataFrame([metrics]).to_csv(root / "metrics.csv", index=False)
 
 
 def main() -> None:
@@ -85,6 +87,13 @@ def main() -> None:
         "rolling_sharpe",
         "rolling_drawdown",
     )
+    factor_symbols = factor_data_symbols(
+        (SimpleNamespace(expression="rank_cs(c + cap)"),)
+    )
+    evaluator_symbols = funnel_evaluator_data_symbols()
+    assert factor_symbols == {"c", "o", "cap"}
+    assert "delisting" not in factor_symbols
+    assert {"amt", "limit", "st", "delisting"} <= evaluator_symbols
 
     outcome, _, _ = evaluate_gate(
         FUNNEL_STAGES[0],
@@ -150,6 +159,28 @@ def main() -> None:
             stage_dir,
             factor,
             FUNNEL_STAGES[1],
+            horizon=1,
+            n_quantiles=10,
+        ) is None
+
+    with tempfile.TemporaryDirectory() as temporary:
+        stage_dir = Path(temporary)
+        _write_complete_result(stage_dir, factor, 3)
+        assert matching_stage_record(
+            stage_dir,
+            factor,
+            FUNNEL_STAGES[3],
+            horizon=1,
+            n_quantiles=10,
+        )
+        metrics_path = stage_dir / "metrics.csv"
+        metrics = pd.read_csv(metrics_path)
+        metrics["tradability_definition"] = "stale_entry_only_definition"
+        metrics.to_csv(metrics_path, index=False)
+        assert matching_stage_record(
+            stage_dir,
+            factor,
+            FUNNEL_STAGES[3],
             horizon=1,
             n_quantiles=10,
         ) is None

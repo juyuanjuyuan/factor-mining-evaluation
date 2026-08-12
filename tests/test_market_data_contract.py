@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import numpy as np
 import pandas as pd
 
@@ -73,6 +74,14 @@ def main() -> None:
 
     st_status = pd.read_parquet(root / "st_status_df.pq")
     assert {"day", "code", "是否st"}.issubset(st_status.columns)
+    delisting_status = pd.read_parquet(
+        root / "delisting_period_status_df.pq"
+    )
+    assert {
+        "day",
+        "code",
+        "is_delisting_period",
+    } == set(delisting_status.columns)
 
     security_reference = pd.read_parquet(root / "security_name_reference.parquet")
     assert {
@@ -90,6 +99,25 @@ def main() -> None:
 
     st_status["day"] = pd.to_datetime(st_status["day"]).dt.normalize()
     st_status["code"] = st_status["code"].astype("string").str.zfill(6)
+    st_values = st_status["是否st"].astype("boolean")
+    assert not st_values.isna().any() and bool(st_values.eq(True).all())
+    assert not st_status.duplicated(["day", "code"]).any()
+    assert st_status["day"].isin(close.index).all()
+    assert st_status["code"].isin(close_codes).all()
+
+    delisting_status["day"] = pd.to_datetime(
+        delisting_status["day"]
+    ).dt.normalize()
+    delisting_status["code"] = (
+        delisting_status["code"].astype("string").str.zfill(6)
+    )
+    delisting_values = delisting_status["is_delisting_period"].astype("boolean")
+    assert not delisting_values.isna().any() and bool(
+        delisting_values.eq(True).all()
+    )
+    assert not delisting_status.duplicated(["day", "code"]).any()
+    assert delisting_status["day"].isin(close.index).all()
+    assert delisting_status["code"].isin(close_codes).all()
     latest_st_day = st_status["day"].max()
     latest_st = (
         st_status[st_status["day"] == latest_st_day]
@@ -115,6 +143,33 @@ def main() -> None:
         ["security_code", "security_name"]
     ].head(20)
     assert bool(latest_st.at["600365"])
+
+    st_pairs = set(zip(st_status["day"], st_status["code"]))
+    delisting_pairs = set(
+        zip(delisting_status["day"], delisting_status["code"])
+    )
+    assert (pd.Timestamp("2026-05-29"), "600421") in st_pairs
+    assert (pd.Timestamp("2026-06-09"), "600421") not in st_pairs
+    assert (pd.Timestamp("2026-05-29"), "600421") not in delisting_pairs
+    assert (pd.Timestamp("2026-06-09"), "600421") in delisting_pairs
+    assert (pd.Timestamp("2026-06-22"), "600421") in delisting_pairs
+    assert (pd.Timestamp("2026-06-23"), "600421") not in delisting_pairs
+    # A formal ST withdrawal is an actual recovery when no other blocking
+    # status starts on the same day.
+    assert (pd.Timestamp("2023-05-16"), "600182") in st_pairs
+    assert (pd.Timestamp("2023-05-17"), "600182") not in st_pairs
+    assert (pd.Timestamp("2023-05-17"), "600182") not in delisting_pairs
+    # Explicit open state-6 intervals remain active through this data cutoff.
+    assert (close.index.max(), "000004") in delisting_pairs
+
+    status_manifest = json.loads(
+        (root / "manifests" / "company_special_status_import_manifest.json")
+        .read_text(encoding="utf-8")
+    )
+    assert status_manifest["close_end"] == str(close.index.max().date())
+    assert {
+        item["code"] for item in status_manifest["open_delisting_intervals"]
+    } == {"000004", "002808", "002898"}
 
     industry_reference = pd.read_parquet(
         root / "industry_l1_name_reference.parquet"
@@ -147,6 +202,7 @@ def main() -> None:
             "industry_reference_rows": len(industry_reference),
             "latest_st_day": str(latest_st_day.date()),
             "latest_risk_warning_count": len(current_risk_warning),
+            "delisting_status_rows": len(delisting_status),
         }
     )
     print("market data contract checks passed")

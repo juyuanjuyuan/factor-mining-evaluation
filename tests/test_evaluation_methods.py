@@ -21,7 +21,9 @@ from evaluators import (
     run_evaluation_methods,
 )
 from evaluators.quantile_net_returns import calculate_quantile_net_returns
-from batch import _matching_completed
+from batch import _matching_completed, _shared_loading_contract
+from engine import parse_and_validate_expression
+from evaluators.tradability import TRADABILITY_DEFINITION
 from returns import (
     RETURN_DEFINITION,
     calculate_forward_open_return,
@@ -57,6 +59,15 @@ def assert_default_quantile_net_costs() -> None:
 
 def main() -> None:
     assert_default_quantile_net_costs()
+    loading_expression, loading_symbols = _shared_loading_contract(
+        (SimpleNamespace(expression="rank_cs(c + cap)"),),
+        {"amt", "limit", "st", "delisting"},
+    )
+    parse_and_validate_expression(loading_expression)
+    assert "delisting" not in loading_expression
+    assert {"c", "o", "cap", "amt", "limit", "st", "delisting"} == (
+        loading_symbols
+    )
     rng = np.random.default_rng(42)
     days = pd.date_range("2024-01-02", periods=18, freq="B")
     codes = [f"{number:06d}" for number in range(12)]
@@ -263,6 +274,25 @@ def main() -> None:
             10,
             ("rank_ic", "rank_icir"),
         )
+        tradability_names = ("tradability_filter", "quantile_returns")
+        current_metrics["evaluation_methods"] = ",".join(tradability_names)
+        current_metrics.to_csv(metrics_path, index=False)
+        assert not _matching_completed(
+            metrics_path,
+            factors,
+            1,
+            10,
+            tradability_names,
+        )
+        current_metrics["tradability_definition"] = TRADABILITY_DEFINITION
+        current_metrics.to_csv(metrics_path, index=False)
+        assert _matching_completed(
+            metrics_path,
+            factors,
+            1,
+            10,
+            tradability_names,
+        ) == {"legacy_factor"}
 
     print("composable evaluation methods passed")
 

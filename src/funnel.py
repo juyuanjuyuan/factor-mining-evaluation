@@ -29,6 +29,7 @@ from evaluators import (
     evaluation_required_data_symbols,
     resolve_evaluation_methods,
 )
+from evaluators.tradability import TRADABILITY_DEFINITION
 from paths import DATA_DIR, FACTOR_OUTPUT_DIR
 from returns import RETURN_DEFINITION
 
@@ -182,6 +183,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--market-cap-file", default=DEFAULT_FILES["cap"])
     parser.add_argument("--limit-ratio-file", default=DEFAULT_FILES["limit"])
     parser.add_argument("--st-status-file", default=DEFAULT_FILES["st"])
+    parser.add_argument(
+        "--delisting-status-file", default=DEFAULT_FILES["delisting"]
+    )
     return parser
 
 
@@ -197,13 +201,27 @@ def _file_names(args: argparse.Namespace) -> dict[str, str]:
         "cap": args.market_cap_file,
         "limit": args.limit_ratio_file,
         "st": args.st_status_file,
+        "delisting": args.delisting_status_file,
     }
 
 
 def required_data_symbols(factors: tuple[Any, ...]) -> set[str]:
+    return factor_data_symbols(factors) | funnel_evaluator_data_symbols()
+
+
+def factor_data_symbols(factors: tuple[Any, ...]) -> set[str]:
+    """Return only symbols that are valid inside factor expressions."""
+
     symbols = {"c", "o"}
     for factor in factors:
         symbols.update(expression_data_symbols(factor.expression))
+    return symbols
+
+
+def funnel_evaluator_data_symbols() -> set[str]:
+    """Return evaluator-only and ordinary inputs required by all stages."""
+
+    symbols: set[str] = set()
     for stage in FUNNEL_STAGES:
         symbols.update(evaluation_required_data_symbols(stage.methods))
     return symbols
@@ -315,6 +333,10 @@ def matching_stage_record(
             ) == decay
             and str(record["return_definition"]) == RETURN_DEFINITION
             and str(record["evaluation_methods"]) == ",".join(stage.method_names)
+            and (
+                "tradability_filter" not in stage.method_names
+                or record.get("tradability_definition") == TRADABILITY_DEFINITION
+            )
         )
     except (TypeError, ValueError):
         return None
@@ -503,7 +525,9 @@ def main() -> int:
     for factor in factors:
         parse_and_validate_expression(factor.expression)
     file_names = _file_names(args)
-    symbols = required_data_symbols(factors)
+    expression_symbols = factor_data_symbols(factors)
+    evaluator_symbols = funnel_evaluator_data_symbols()
+    symbols = expression_symbols | evaluator_symbols
     _validate_files(data_dir, file_names, symbols)
 
     run_id = datetime.now().astimezone().strftime("%Y%m%dT%H%M%S%f%z")
@@ -570,8 +594,9 @@ def main() -> int:
                         )
                         shared_data = load_market_data(
                             data_dir,
-                            " + ".join(sorted(symbols)),
+                            " + ".join(sorted(expression_symbols)),
                             file_names,
+                            extra_symbols=evaluator_symbols,
                         )
                     result = evaluate_factor_expression(
                         factor_name=factor.name,

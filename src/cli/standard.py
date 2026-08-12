@@ -81,6 +81,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--market-cap-file", default=DEFAULT_FILES["cap"])
     run.add_argument("--limit-ratio-file", default=DEFAULT_FILES["limit"])
     run.add_argument("--st-status-file", default=DEFAULT_FILES["st"])
+    run.add_argument(
+        "--delisting-status-file", default=DEFAULT_FILES["delisting"]
+    )
     return parser
 
 
@@ -119,6 +122,7 @@ def main() -> int:
         "cap": args.market_cap_file,
         "limit": args.limit_ratio_file,
         "st": args.st_status_file,
+        "delisting": args.delisting_status_file,
     }
     result = evaluate_factor_standards(
         factor_name=args.factor_name,

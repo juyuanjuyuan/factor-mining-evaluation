@@ -160,6 +160,16 @@ def main() -> None:
                 "industry",
             ]
             assert not joint_neutralization_method["is_default"]
+            tradability_method = next(
+                item for item in methods.json() if item["name"] == "tradability_filter"
+            )
+            assert tradability_method["required_data_symbols"] == [
+                "o",
+                "limit",
+                "st",
+                "delisting",
+                "amt",
+            ]
             holding_audit_method = next(
                 item for item in methods.json() if item["name"] == "holding_audit"
             )
@@ -173,6 +183,7 @@ def main() -> None:
                 "industry",
                 "o",
                 "st",
+                "delisting",
             ]
             assert not holding_audit_method["is_default"]
             training_methods = client.get("/api/models/training-methods")
@@ -623,6 +634,27 @@ def main() -> None:
             )
             assert "rolling_sharpe" in profitability_template["methods"]
             assert "fitness" in profitability_template["methods"]
+            edited_builtin_methods = ["rank_ic", "rank_icir"]
+            edited_builtin = client.put(
+                f"/api/templates/{default_template['id']}",
+                json={
+                    "name": default_template["name"],
+                    "kind": default_template["kind"],
+                    "methods": edited_builtin_methods,
+                    "params": default_template["params"],
+                },
+            )
+            assert edited_builtin.status_code == 200
+            assert edited_builtin.json()["is_builtin"] is True
+            assert edited_builtin.json()["methods"] == edited_builtin_methods
+            app.state.db.initialize()
+            persisted_builtin = next(
+                template
+                for template in client.get("/api/templates").json()
+                if template["id"] == default_template["id"]
+            )
+            assert persisted_builtin["methods"] == edited_builtin_methods
+            default_template = persisted_builtin
             templated_evaluation = client.post(
                 "/api/jobs",
                 json={

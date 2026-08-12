@@ -14,6 +14,7 @@ from genetic_mining.fitness import (
     fitness_contract,
     prepare_fitness_context,
 )
+from evaluators.tradability import TRADABILITY_DEFINITION
 from genetic_mining.fitness_backends import MPSFitnessBackend, mps_runtime_status
 from genetic_mining.tree import ExpressionTree
 from test_genetic_mining import synthetic_market_data
@@ -125,6 +126,9 @@ def test_all_gp_operators_match_cpu() -> None:
 def test_preprocessing_and_fitness_match_cpu() -> None:
     data = synthetic_market_data(155)
     data["st"].iloc[50:55, :2] = True
+    data["delisting"].iloc[80:85, 3:5] = True
+    data["amt"].iloc[100, 7] = 0.0
+    data["amt"].iloc[110, 8] = np.nan
     data["o"].iloc[70, 2] = data["c"].iloc[69, 2] * 1.10
     data["cap"].iloc[60, 0] = 0.0
     data["industry"].iloc[60, 16:22] = pd.NA
@@ -166,6 +170,9 @@ def test_preprocessing_and_fitness_match_cpu() -> None:
                 "industry_l1_fixed_effects"
             )
             assert contract["minimum_industry_observations"] == 3
+        if mode == "paper_local":
+            contract = fitness_contract(context)
+            assert contract["tradability_definition"] == TRADABILITY_DEFINITION
 
 
 def test_mps_fitness_cannot_see_test_returns() -> None:

@@ -26,6 +26,7 @@ The default parquet mapping is:
 | `cap` | total market capitalization | `market_cap_df.pq` |
 | `limit` | daily price-limit ratio proxy | `limit_ratio_df.pq` |
 | `st` | ST/*ST status, normalized to boolean wide matrix | `st_status_df.pq` |
+| `delisting` | evaluator-only formal delisting-consolidation-period status | `delisting_period_status_df.pq` |
 | `industry` | evaluator-only point-in-time一级行业分类 | `行业数据.parquet` |
 
 The close matrix is always loaded as the canonical alignment axis. The open matrix is always loaded
@@ -37,6 +38,34 @@ Every input is then aligned to close by index and columns.
 `trade_date`, six-digit `security_code`, and `industry_l1_code`. Each classification is matched to
 the factor exposure date `t` only; missing dates remain missing and are never forward- or
 back-filled.
+
+`st` and `delisting` are point-in-time status inputs derived from
+`datayes.equ_inst_sstate`. Their canonical files are true-only long tables:
+`day/code/是否st` and `day/code/is_delisting_period`. A missing `(day, code)` after alignment means
+false, not an unknown value to be forward-filled. The delisting status covers formal state 6
+(first delisting-consolidation day) through state 7 (last day), inclusive. An explicit state-6
+event with no state-7 event by the data cutoff is extended only through the last trading day of
+`close_df.pq`. The import, source hashes, and any such open intervals are recorded by
+`scripts/data/import_company_special_status.py` in
+`data/manifests/company_special_status_import_manifest.json`; the replaced ST file is retained at
+`data/manifests/st_status_df_before_20260803_company_status_import.pq`.
+
+`tradability_filter` masks a signal row when the security is ST/*ST or in the formal delisting
+period on either signal day `t` or entry day `t+1`. It also masks an entry whose next-open gap
+touches the price-limit proxy, or whose entry-day `amt[t+1]` is missing, non-finite, or not strictly
+positive. The amount condition filters suspended/zero-turnover observations even when a stale flat
+price remains in the price matrices. In particular, it closes the no-trade gap between formal
+state 7 ending a delisting-consolidation period and the subsequent exchange delisting when those
+intervening rows have zero turnover. `amt[t+1]` is a full-entry-day aggregate and therefore an
+ex-post execution-feasibility proxy, not information observable at the `t+1` open; it proves that
+an all-day-zero observation could not be entered, while `amt > 0` does not prove an opening-price
+fill. The method therefore declares `o`, `amt`, `limit`, `st`, and
+`delisting` as required data symbols. A security becomes eligible for consideration again only after both
+status observations are false; for example, a status that is still true on `t` but withdrawn on
+`t+1` remains excluded for that signal. This status source does not cover the interval from an
+exchange termination decision through the day before formal delisting consolidation begins. A
+separate point-in-time exchange-decision dataset is required to prohibit trading from that earlier
+decision date.
 
 The factor at day `t` is calculated after that day's close, so it cannot trade at day `t`.
 The position enters at `open[t + 1]`. For holding horizon `H`, the label is:
@@ -99,7 +128,8 @@ before the testing run.
 Supported data symbols: `c`, `o`, `h`, `l`, `vol`, `amt`, `vwap`, `cap`,
 `limit`, `st`.
 
-`industry` is deliberately evaluator-only and cannot appear in a factor expression.
+`industry` and `delisting` are deliberately evaluator-only and cannot appear in a factor
+expression.
 
 Supported operators:
 

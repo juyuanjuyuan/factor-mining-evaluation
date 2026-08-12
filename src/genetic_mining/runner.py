@@ -77,7 +77,8 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 TEST_SCREENING_PROTOCOL = (
-    "profitability_then_ic_joint_neutral_v7_direction_normalized_"
+    "profitability_then_ic_joint_neutral_v8_signal_status_tradability_"
+    "direction_normalized_"
     "pareto_ranked_hof_mutation_warmup_factor_library_handoff"
 )
 
@@ -230,7 +231,7 @@ class GeneticMiningRunner:
         terminal_expression = " + ".join(f"({item})" for item in self.config.evolution.terminals)
         # Both frozen test screens apply joint size/industry neutralization,
         # regardless of the training-fitness preprocessing.
-        extra_symbols = {"cap", "amt", "limit", "st", "industry"}
+        extra_symbols = {"cap", "amt", "limit", "st", "delisting", "industry"}
         return load_market_data(
             self.config.data_dir,
             terminal_expression,

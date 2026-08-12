@@ -133,7 +133,7 @@ r^{\mathrm{net}}_{G_g,t} &= r_{G_g,t}-B_{g,t}c_{\mathrm{buy}}-S_{g,t}c_{\mathrm{
   holding_audit: {
     label: '查看历史持仓',
     category: '组合诊断',
-    description: '将最高分位组的每日等权目标持仓写入压缩审计产物，供运行详情页按信号日分页回看。',
+    description: '将最高分位组的每日等权目标持仓和信号日/买入日特殊状态写入压缩审计产物，供运行详情页按信号日分页回看。',
     formula: String.raw`\begin{aligned}
 \mathcal V_t &= \{i:\ f_{i,t}\in\mathbb R,\ R^{(H)}_{i,t}\in\mathbb R\} \\
 g_{i,t} &= \left\lfloor\frac{(\operatorname{rank}_i(f_{i,t})-1)N}{|\mathcal V_t|}\right\rfloor+1 \\
@@ -141,11 +141,11 @@ g_{i,t} &= \left\lfloor\frac{(\operatorname{rank}_i(f_{i,t})-1)N}{|\mathcal V_t|
 w_{i,t}=\frac{1}{|\mathcal H_t|}
 \end{aligned}`,
     definition:
-      '依赖 industry_market_cap_neutralize、tradability_filter 和 quantile_net_returns，必须排在三者之后。读取当时的 state.factor，因此仓位是联合行业/市值中性化和买入日可交易性过滤后的结果；在因子值和 H 日开盘收益均有限的股票上，使用与 quantile_net_returns 完全相同的 rank(method=first) 与分组公式。仅持久化最高组 GN 的信号日、次日开盘买卖日期、代码、组内排名、等权目标权重、中性化后因子、市值、行业、开盘价格、未来开盘收益及买入日 ST 状态；同时写出逐日仓位数、毛收益、交易成本和净收益，以与组收益核验。网页只按所选信号日分页读取 Parquet，并用本地证券、行业对照表补充名称，原始代码仍保留。',
+      '依赖 industry_market_cap_neutralize、tradability_filter 和 quantile_net_returns，必须排在三者之后。读取当时的 state.factor，因此仓位是联合行业/市值中性化和可交易性过滤后的结果；在因子值和 H 日开盘收益均有限的股票上，使用与 quantile_net_returns 完全相同的 rank(method=first) 与分组公式。仅持久化最高组 GN 的信号日、次日开盘买卖日期、代码、组内排名、等权目标权重、中性化后因子、市值、行业、开盘价格、未来开盘收益，以及信号日和买入日各自的 ST/*ST 与退市整理期四个状态字段；同时写出逐日仓位数、毛收益、交易成本和净收益，以与组收益核验。网页只按所选信号日分页读取 Parquet，并用本地证券、行业对照表补充名称，原始代码仍保留。',
     interpretation:
       '用于解释回测中最高分位组在某一历史信号日实际由哪些股票构成，并核对这些股票的等权平均收益与报告的 GN 净收益一致。它不改变因子、分组收益或任何筛选门槛。',
     limitations:
-      '这是历史回测持仓，不是当前可直接下单的最终仓单。成员资格为了与已报告收益一致而要求未来收益可得；可交易性只检查 t+1 买入日，不模拟卖出日流动性、滑点、冲击成本或账户约束。行业名称对应信号日行业代码；公司名称是证券主表中的当前或退市前最后简称，不是完整的信号日历次更名记录。',
+      '这是历史回测持仓，不是当前可直接下单的最终仓单。成员资格为了与已报告收益一致而要求未来收益可得；可交易性检查 t 信号日与 t+1 买入日的 ST/*ST 和退市整理期状态，以及 t+1 开盘涨跌停，但不模拟卖出日流动性、滑点、冲击成本或账户约束。行业名称对应信号日行业代码；公司名称是证券主表中的当前或退市前最后简称，不是完整的信号日历次更名记录。',
   },
   fitness: {
     label: '年度 Fitness',
@@ -255,15 +255,19 @@ f_{i,t} &\leftarrow \widehat{\varepsilon}_{i,t}
   tradability_filter: {
     label: '可交易性过滤',
     category: '因子变换',
-    description: '剔除下一开盘入场日触及涨跌停或处于 ST 状态的样本。',
+    description: '剔除信号日或下一开盘入场日处于 ST/*ST/退市整理期、入场日无有效成交额，以及入场开盘触及涨跌停的样本。',
     formula: String.raw`\begin{aligned}
 g_{i,t+1} &= \frac{\operatorname{open}_{i,t+1}}{\operatorname{close}_{i,t}} - 1 \\
-\left(|g_{i,t+1}| \ge L_{i,t+1}-0.002\right)\lor \operatorname{ST}_{i,t+1}
+Q_{i,d} &= \operatorname{ST}_{i,d}\lor\operatorname{DelistPeriod}_{i,d} \\
+A_{i,t+1} &= \operatorname{amt}_{i,t+1} \\
+M_{i,t+1} &= \neg\operatorname{finite}(A_{i,t+1})\lor A_{i,t+1}\le 0 \\
+Q_{i,t}\lor Q_{i,t+1}\lor M_{i,t+1}\lor\left(|g_{i,t+1}| \ge L_{i,t+1}-0.002\right)
 &\Longrightarrow f_{i,t}\leftarrow\mathrm{NaN}
 \end{aligned}`,
     definition:
-      '检查因子日 t 的下一交易日 t+1；用代码板块推导的涨跌幅限制矩阵 L 判断开盘是否触及涨跌停，并将触线或买入日 point-in-time ST 样本从当前工作因子中屏蔽。ST 增量数据从更新边界前一日状态延续，仅应用区间内新事件；2026-07-06 前还用交易所精确 5%/10% 限价校验。',
-    interpretation: '覆盖开盘封板后盘中打开的入场不可成交情形。2026-07-06 起主板 ST 与普通股票均使用 10% 涨跌幅，ST 必须依赖历史状态而不能再由限价单独推断；开盘封板判断仍是基于复权开盘/收盘和板块限制的代理口径，且不检查退出日可交易性。',
+      '对每个因子信号日 t，同时检查 t 和下一交易日 t+1 的 point-in-time ST/*ST 与正式退市整理期状态；任一日命中即屏蔽当前工作因子。同时要求 t+1 成交额 amt 为有限正数：缺失、非有限或小于等于 0 均视为买入日无成交并屏蔽。另用代码板块推导的涨跌幅限制矩阵 L 判断 t+1 开盘是否触及涨跌停。状态撤销或退市整理期结束后，只有当信号日和买入日均不再处于上述状态，且买入日存在有效正成交额时，该股才会重新进入可考虑样本。2026-07-06 前还用交易所精确 5%/10% 限价校验。',
+    interpretation: '同时防止信号生成时已处于特殊状态的股票进入候选集，并覆盖状态在隔夜变更、开盘封板后盘中打开，以及退市整理期结束到正式摘牌之间已无成交额的不可入场情形。2026-07-06 起主板 ST 与普通股票均使用 10% 涨跌幅，ST 必须依赖历史状态而不能再由限价单独推断。',
+    limitations: '买入日成交额是全日汇总的可成交性下限检查；amt > 0 不代表策略在开盘时点一定能按代理开盘价成交。开盘封板判断仍基于复权开盘/收盘和板块限制的代理口径，且不检查退出日可交易性。',
   },
   top_quantile_performance: {
     label: '最高组表现分析',

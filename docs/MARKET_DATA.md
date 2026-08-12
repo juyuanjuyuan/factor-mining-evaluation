@@ -22,7 +22,8 @@
 | `limit_up_price_df.pq` | — | 公司行情源逐日精确涨停价，与复权 OHLC 使用同一尺度 |
 | `limit_down_price_df.pq` | — | 公司行情源逐日精确跌停价，与复权 OHLC 使用同一尺度 |
 | `limit_ratio_df.pq` | `limit` | 按代码板块推导的常规涨跌幅限制比例宽表 |
-| `st_status_df.pq` | `st` | ST 状态；源文件可为 `day/code/是否st` 长表，加载时规范为布尔宽表 |
+| `st_status_df.pq` | `st` | ST/*ST point-in-time 状态；标准存储为 true-only `day/code/是否st` 长表，加载时规范为布尔宽表 |
+| `delisting_period_status_df.pq` | `delisting`（仅 evaluator） | 正式退市整理期 point-in-time 状态；标准存储为 true-only `day/code/is_delisting_period` 长表 |
 | `行业数据.parquet` | `industry`（仅 evaluator） | 动态一级行业长表：`trade_date/security_code/industry_l1_code` |
 | `security_name_reference.parquet` | — | 持仓展示用证券代码名称表；覆盖历史上市/退市证券，名称为当前或退市前最后简称 |
 | `industry_l1_name_reference.parquet` | — | 持仓展示用中信一级行业代码名称表 |
@@ -34,12 +35,38 @@
 “当前或退市前最后简称”。行业名称只翻译持仓中已经按信号日确定的行业代码，不参与因子计算、
 中性化或收益标签。
 
-增量更新 `st_status_df.pq` 时不能直接把 `equ_inst_sstate` 的最后事件当作当前状态：该事件
-历史可能遗漏较早的实施/撤销记录。`scripts/data/merge_company_market_incremental.py` 会从
-更新边界前一交易日的已验证状态开始，2026-07-06 前结合交易所精确 5%/10% 涨跌停价，
-仅应用增量区间内实际生效的状态事件，并在 2026-07-06 主板风险警示股涨跌幅统一改为
-10% 后延续已确认状态。`scripts/data/repair_st_status_tail.py` 可对已写入的增量尾部执行
-同口径修复；真实数据合同还会用证券简称对最新状态做保守的漏标校验。
+## 特殊状态来源与区间口径
+
+`st_status_df.pq` 和 `delisting_period_status_df.pq` 由
+`scripts/data/import_company_special_status.py` 从公司数据表
+`datayes.equ_inst_sstate` 的下载产物导入。导入器先核对源 `manifest.json` 中的
+SHA256，再将状态轴限制在 `close_df.pq` 的交易日与六位证券代码上。项目内的
+`data/manifests/company_special_status_import_manifest.json` 记录源文件校验和覆盖统计；
+覆盖原 ST 文件前，导入器会备份到
+`data/manifests/st_status_df_before_20260803_company_status_import.pq`。
+
+两张状态表都是 **true-only 长表**：存在一行表示该证券当日状态为真，
+未出现的 `(day, code)` 组合在对齐后解释为假，不进行前向或后向填充。ST 表的字段为
+`day/code/是否st`，表示正式 ST/*ST 状态；撤销事件生效日当天起不再为真。
+退市整理期表的字段为 `day/code/is_delisting_period`，由正式状态码 6（整理期首日）
+至状态码 7（整理期末日）含首尾构建。若数据截止时某个明确的状态 6 尚未出现
+对应状态 7，导入器只将该未闭合区间延长到 `close_df.pq` 当前截止日，不外推到未来。
+
+该来源不覆盖交易所作出终止上市决定之日至退市整理期首日之前的
+“已决定退市、尚未进入整理期”阶段。如需从决定日起禁交，必须另外接入可追溯的
+交易所决定日数据，不得用当前简称或最后交易日反推。
+可交易性过滤另外要求买入日 `amt[t+1]` 为有限数且严格大于零；这会屏蔽停牌、
+零成交和仅保留伪持平价格的日期，并覆盖退市整理期状态 7 结束后至正式摘牌前
+仍有行情行、但实际无成交的空档。该成交额检查是入场成交约束，不代替缺失的交易所决定日状态。
+同时，`amt[t+1]` 是买入日全日汇总，只作为事后执行可行性代理：全日为零可确定不可入场，
+但正成交额不代表在开盘时点一定能按代理开盘价成交，也不应被解释为因子在信号日可见的输入。
+
+在两次完整特殊状态下载之间，增量行情更新仍不能直接把
+`equ_inst_sstate` 的最后事件当作当前状态。
+`scripts/data/merge_company_market_incremental.py` 从更新边界前一交易日的已验证状态开始，
+2026-07-06 前结合交易所精确 5%/10% 涨跌停价，仅应用增量区间内实际生效的状态事件；
+`scripts/data/repair_st_status_tail.py` 可对已写入的增量尾部执行同口径修复。
+获得新的全量事件产物后，仍应以本节 importer 的校验与完整区间重建为准。
 
 ## Price-limit ratio 来源
 
@@ -81,6 +108,14 @@
 ## 重建命令
 
 ```bash
+/Users/huangjuyuan/miniforge3/envs/rdagent/bin/python scripts/data/import_company_special_status.py \
+  --source-dir /Users/huangjuyuan/Desktop/database_summerintern/outputs/a_share_special_status
+
+# 确认 dry-run 校验和区间统计后，再逐文件原子覆盖项目数据
+/Users/huangjuyuan/miniforge3/envs/rdagent/bin/python scripts/data/import_company_special_status.py \
+  --source-dir /Users/huangjuyuan/Desktop/database_summerintern/outputs/a_share_special_status \
+  --apply
+
 /Users/huangjuyuan/miniforge3/envs/rdagent/bin/python scripts/data/import_datayes_volume.py \
   --source-root /Users/huangjuyuan/Desktop/database_summerintern/outputs/clickhouse_market_data/datayes/mkt_equd_adj_af \
   --source-python-root /Users/huangjuyuan/Documents/Codex/2026-06-29/f-o/src \

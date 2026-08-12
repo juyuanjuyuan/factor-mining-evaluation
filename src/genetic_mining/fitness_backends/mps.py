@@ -100,7 +100,7 @@ class MPSFitnessBackend:
         self.data = {
             symbol: self._frame_tensor(frame, reference=close)
             for symbol, frame in context.market_data.items()
-            if symbol not in {"st", "industry"}
+            if symbol not in {"st", "delisting", "industry"}
         }
         if "st" in context.market_data:
             st = (
@@ -116,6 +116,20 @@ class MPSFitnessBackend:
             )
         else:
             self.st = None
+        if "delisting" in context.market_data:
+            delisting = (
+                context.market_data["delisting"]
+                .reindex(index=self.index, columns=self.columns)
+                .fillna(False)
+                .astype(bool)
+            )
+            self.delisting = self.torch.as_tensor(
+                delisting.to_numpy(dtype=bool, copy=False),
+                dtype=self.torch.bool,
+                device=self.device,
+            )
+        else:
+            self.delisting = None
         self.forward_return = self.torch.as_tensor(
             context.forward_return.to_numpy(dtype=np.float32, copy=True),
             dtype=self.dtype,
@@ -147,21 +161,22 @@ class MPSFitnessBackend:
     def _build_untradeable_mask(self):
         if self.context.preprocess_mode != "paper_local":
             return None
-        required = {"o", "c", "limit"}
-        if not required <= set(self.context.market_data) or self.st is None:
-            raise KeyError("paper_local MPS 预处理缺少 o/c/limit/st")
+        required = {"o", "c", "limit", "amt"}
+        if (
+            not required <= set(self.context.market_data)
+            or self.st is None
+            or self.delisting is None
+        ):
+            raise KeyError(
+                "paper_local MPS 预处理缺少 o/c/limit/st/delisting/amt"
+            )
         limit_up, limit_down = open_limit_entry_masks(
             self.context.market_data["o"],
             self.context.market_data["c"],
             self.context.market_data["limit"],
         )
-        positions = self.index.get_indexer(self.context.signal_index) + 1
-        mask = np.zeros((len(positions), len(self.columns)), dtype=bool)
-        valid = positions < len(self.index)
-        limit_values = (
-            limit_up.to_numpy(dtype=bool, copy=False)
-            | limit_down.to_numpy(dtype=bool, copy=False)
-        )
+        signal_positions = self.index.get_indexer(self.context.signal_index)
+        entry_positions = signal_positions + 1
         st_values = (
             self.context.market_data["st"]
             .reindex(index=self.index, columns=self.columns)
@@ -169,7 +184,36 @@ class MPSFitnessBackend:
             .astype(bool)
             .to_numpy(dtype=bool, copy=False)
         )
-        mask[valid] = limit_values[positions[valid]] | st_values[positions[valid]]
+        delisting_values = (
+            self.context.market_data["delisting"]
+            .reindex(index=self.index, columns=self.columns)
+            .fillna(False)
+            .astype(bool)
+            .to_numpy(dtype=bool, copy=False)
+        )
+        mask = (
+            st_values[signal_positions]
+            | delisting_values[signal_positions]
+        )
+        valid = entry_positions < len(self.index)
+        limit_values = (
+            limit_up.to_numpy(dtype=bool, copy=False)
+            | limit_down.to_numpy(dtype=bool, copy=False)
+        )
+        amount_values = (
+            self.context.market_data["amt"]
+            .reindex(index=self.index, columns=self.columns)
+            .to_numpy(dtype=float, copy=False)
+        )
+        mask[valid] |= (
+            limit_values[entry_positions[valid]]
+            | st_values[entry_positions[valid]]
+            | delisting_values[entry_positions[valid]]
+            | ~(
+                np.isfinite(amount_values[entry_positions[valid]])
+                & (amount_values[entry_positions[valid]] > 0)
+            )
+        )
         return self.torch.as_tensor(mask, dtype=self.torch.bool, device=self.device)
 
     def _build_industry_codes(self):

@@ -37,6 +37,7 @@ from evaluators import (
     evaluation_required_data_symbols,
     resolve_evaluation_methods,
 )
+from evaluators.tradability import TRADABILITY_DEFINITION
 from paths import DATA_DIR, FACTOR_OUTPUT_DIR
 
 
@@ -117,6 +118,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--market-cap-file", default=DEFAULT_FILES["cap"])
     parser.add_argument("--limit-ratio-file", default=DEFAULT_FILES["limit"])
     parser.add_argument("--st-status-file", default=DEFAULT_FILES["st"])
+    parser.add_argument(
+        "--delisting-status-file", default=DEFAULT_FILES["delisting"]
+    )
     parser.add_argument("--industry-file", default=DEFAULT_FILES["industry"])
     return parser
 
@@ -133,6 +137,7 @@ def _file_names(args: argparse.Namespace) -> dict[str, str]:
         "cap": args.market_cap_file,
         "limit": args.limit_ratio_file,
         "st": args.st_status_file,
+        "delisting": args.delisting_status_file,
         "industry": args.industry_file,
     }
 
@@ -203,6 +208,11 @@ def _matching_completed(
             ) == decay
             and str(row.return_definition) == RETURN_DEFINITION
             and row_methods == requested_methods
+            and (
+                "tradability_filter" not in method_names
+                or getattr(row, "tradability_definition", None)
+                == TRADABILITY_DEFINITION
+            )
         ):
             completed.add(name)
     return completed
@@ -237,6 +247,21 @@ def _dry_run_payload(
         }
         for factor in factors
     ]
+
+
+def _shared_loading_contract(
+    factors: tuple[Any, ...],
+    method_data_symbols: set[str],
+) -> tuple[str, set[str]]:
+    """Build an expression-safe shared-load request for a pending batch."""
+
+    expression_symbols = {"c", "o"}
+    for factor in factors:
+        expression_symbols.update(expression_data_symbols(factor.expression))
+    return (
+        " + ".join(sorted(expression_symbols)),
+        expression_symbols | set(method_data_symbols),
+    )
 
 
 def main() -> int:
@@ -318,12 +343,14 @@ def main() -> int:
 
     shared_data = None
     if pending and not args.no_cache_data:
-        required_symbols = {"c", "o", *method_data_symbols}
-        for factor in pending:
-            required_symbols.update(
-                expression_data_symbols(factor.expression)
-            )
-        loading_expression = " + ".join(sorted(required_symbols))
+        # Evaluator-only inputs such as ``delisting`` must never be smuggled
+        # into the factor-expression namespace merely to trigger shared
+        # loading. Keep the synthetic expression expression-safe and request
+        # evaluator data through the dedicated contract.
+        loading_expression, required_symbols = _shared_loading_contract(
+            pending,
+            method_data_symbols,
+        )
         print(
             json.dumps(
                 {
