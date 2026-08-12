@@ -41,6 +41,7 @@ def write_market_data(data_dir: Path) -> None:
         "cap": pd.DataFrame(rng.uniform(1e9, 1e10, close.shape), index=index, columns=columns),
         "limit": pd.DataFrame(0.10, index=index, columns=columns),
         "st": pd.DataFrame(False, index=index, columns=columns),
+        "delisting": pd.DataFrame(False, index=index, columns=columns),
     }
     frames["industry"] = pd.DataFrame(
         {

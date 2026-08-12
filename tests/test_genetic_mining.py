@@ -97,6 +97,7 @@ def synthetic_market_data(periods: int = 190) -> dict[str, pd.DataFrame]:
         ),
         "limit": pd.DataFrame(0.10, index=days, columns=codes),
         "st": pd.DataFrame(False, index=days, columns=codes),
+        "delisting": pd.DataFrame(False, index=days, columns=codes),
         "industry": pd.DataFrame(
             np.tile(industry_labels, (periods, 1)),
             index=days,

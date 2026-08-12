@@ -220,12 +220,7 @@ class Database:
                     INSERT INTO pipeline_templates
                     (name, kind, methods_json, params_json, is_builtin, created_at, updated_at)
                     VALUES (?, ?, ?, ?, 1, ?, ?)
-                    ON CONFLICT(name) DO UPDATE SET
-                        kind = excluded.kind,
-                        methods_json = excluded.methods_json,
-                        params_json = excluded.params_json,
-                        is_builtin = 1,
-                        updated_at = excluded.updated_at
+                    ON CONFLICT(name) DO NOTHING
                     """,
                     (
                         name,
@@ -841,12 +836,15 @@ class Database:
     def update_template(self, template_id: int, payload: Mapping[str, Any]) -> dict[str, Any] | None:
         with self._write_lock, self.connection() as connection:
             row = connection.execute(
-                "SELECT is_builtin FROM pipeline_templates WHERE id = ?", (template_id,)
+                "SELECT name, kind, is_builtin FROM pipeline_templates WHERE id = ?",
+                (template_id,),
             ).fetchone()
             if row is None:
                 return None
-            if row["is_builtin"]:
-                raise PermissionError("Built-in templates are read-only")
+            if row["is_builtin"] and (
+                payload["name"] != row["name"] or payload["kind"] != row["kind"]
+            ):
+                raise PermissionError("内置模板只能修改执行配置，不能修改名称或类型")
             connection.execute(
                 """
                 UPDATE pipeline_templates SET name = ?, kind = ?, methods_json = ?,
@@ -871,6 +869,6 @@ class Database:
             if row is None:
                 return False
             if row["is_builtin"]:
-                raise PermissionError("Built-in templates are read-only")
+                raise PermissionError("内置模板不能删除")
             connection.execute("DELETE FROM pipeline_templates WHERE id = ?", (template_id,))
             return True

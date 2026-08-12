@@ -52,6 +52,8 @@ def synthetic_market_data() -> dict[str, pd.DataFrame]:
         ),
         "limit": pd.DataFrame(0.10, index=days, columns=codes),
         "st": pd.DataFrame(False, index=days, columns=codes),
+        "delisting": pd.DataFrame(False, index=days, columns=codes),
+        "amt": pd.DataFrame(1e8, index=days, columns=codes),
         "industry": industry,
     }
 

@@ -22,6 +22,7 @@ from engine import (
     evaluate_expression,
     evaluate_wide,
     get_ic_info,
+    render_test_code,
     scale_cs,
     winsorize_cs,
     zscore_cs,
@@ -30,6 +31,7 @@ from engine import (
     ts_sum,
 )
 from evaluators import resolve_evaluation_methods
+from evaluators.tradability import TRADABILITY_DEFINITION
 from reporting.dashboard import validate_artifacts
 from returns import (
     RETURN_DEFINITION,
@@ -40,6 +42,23 @@ from returns import (
 def main() -> None:
     assert _artifact_name("alpha101_001") == "alpha101_001"
     assert _artifact_name('bad/name:*?') == "bad_name___"
+    tradability_snapshot = render_test_code(
+        factor_name="snapshot",
+        expression="c",
+        data_dir=Path("/tmp/data"),
+        output_dir=Path("/tmp/output"),
+        horizon=1,
+        n_quantiles=10,
+        decay=1,
+        file_names={},
+        evaluation_methods=("tradability_filter",),
+        signal_start=None,
+        signal_end=None,
+    )
+    assert (
+        f"EXPECTED_TRADABILITY_DEFINITION = {TRADABILITY_DEFINITION!r}"
+        in tradability_snapshot
+    )
     rng = np.random.default_rng(7)
     days = pd.date_range("2024-01-01", periods=35, freq="B")
     codes = [f"{number:06d}" for number in range(30)]

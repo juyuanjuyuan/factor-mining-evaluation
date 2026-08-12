@@ -31,6 +31,7 @@ def _store_profitability_run(
         ADMISSION_QUANTILES,
     )
     from returns import RETURN_DEFINITION
+    from evaluators.tradability import TRADABILITY_DEFINITION
 
     job_id = uuid4().hex
     run = make_run(
@@ -57,6 +58,7 @@ def _store_profitability_run(
         run["id"],
         {
             "return_definition": RETURN_DEFINITION,
+            "tradability_definition": TRADABILITY_DEFINITION,
             "signal_start": "2024-01-02",
             "signal_end": "2024-12-31",
             "sample_start_day": "2024-01-02",
@@ -181,6 +183,7 @@ def test_missing_metrics_runs_the_profitability_template_for_both_factors() -> N
         ADMISSION_PROFITABILITY_METHOD_NAMES,
     )
     from returns import RETURN_DEFINITION
+    from evaluators.tradability import TRADABILITY_DEFINITION
 
     with TemporaryDirectory() as temporary:
         service, _db, _correlation = _service(Path(temporary))
@@ -198,6 +201,7 @@ def test_missing_metrics_runs_the_profitability_template_for_both_factors() -> N
             return {
                 "metrics": {
                     "return_definition": RETURN_DEFINITION,
+                    "tradability_definition": TRADABILITY_DEFINITION,
                     "sample_start_day": "2024-01-02",
                     "sample_end_day": "2024-12-27",
                     "gn_rolling_sharpe_60_median": (
@@ -246,6 +250,7 @@ def test_missing_metrics_runs_the_profitability_template_for_both_factors() -> N
 def test_gp_handoff_reuses_its_frozen_profitability_metrics() -> None:
     from app.services.registry_service import ADMISSION_PROFITABILITY_METHOD_NAMES
     from returns import RETURN_DEFINITION
+    from evaluators.tradability import TRADABILITY_DEFINITION
 
     def request(name: str, expression: str, sharpe: float, fitness: float) -> dict:
         return {
@@ -262,6 +267,7 @@ def test_gp_handoff_reuses_its_frozen_profitability_metrics() -> None:
                 "signal_end": "2024-12-31",
                 "metrics": {
                     "return_definition": RETURN_DEFINITION,
+                    "tradability_definition": TRADABILITY_DEFINITION,
                     "signal_start": "2024-01-02",
                     "signal_end": "2024-12-31",
                     "sample_start_day": "2024-01-02",

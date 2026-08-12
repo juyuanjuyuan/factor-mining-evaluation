@@ -17,6 +17,7 @@ from uuid import uuid4
 from engine import evaluate_factor_expression, expression_data_symbols
 from evaluation_standards import PROFITABILITY_METHOD_NAMES, PROFITABILITY_STANDARD_NAME
 from evaluators.base import REGISTERED_EVALUATION_METHODS
+from evaluators.tradability import TRADABILITY_DEFINITION
 from factor_correlation import (
     FactorCorrelationService,
     FactorCorrelationThresholdError,
@@ -56,6 +57,7 @@ class _PerformanceSnapshot:
             horizon,
             n_quantiles,
             return_definition,
+            tradability_definition,
             signal_start,
             signal_end,
             sample_start_day,
@@ -74,6 +76,7 @@ class _PerformanceSnapshot:
                 "horizon": horizon,
                 "n_quantiles": n_quantiles,
                 "return_definition": return_definition,
+                "tradability_definition": tradability_definition,
                 "signal_start": signal_start,
                 "signal_end": signal_end,
                 "sample_start_day": sample_start_day,
@@ -542,11 +545,17 @@ class RegistryService:
         sharpe = cls._finite_metric(metrics, "gn_rolling_sharpe_60_median")
         if sharpe is None or metrics.get("return_definition") != RETURN_DEFINITION:
             return None
+        if (
+            "tradability_filter" in methods
+            and metrics.get("tradability_definition") != TRADABILITY_DEFINITION
+        ):
+            return None
         fitness = cls._finite_metric(metrics, "fitness")
         signature = (
             int(horizon),
             int(n_quantiles),
             RETURN_DEFINITION,
+            metrics.get("tradability_definition"),
             metrics.get("signal_start"),
             metrics.get("signal_end"),
             metrics.get("sample_start_day"),

@@ -57,6 +57,7 @@ from evaluators.rolling_sharpe import (
     evaluate_rolling_sharpe as direct_evaluate_rolling_sharpe,
 )
 from transforms import neutralize_factor_by_market_cap
+from transforms.delisting_status import normalize_delisting_status_frame
 from transforms.price_limits import (
     infer_price_limit_ratio_frame,
     normalize_st_status_frame,
@@ -927,11 +928,19 @@ def test_tradability_filter() -> None:
     limit_ratio = pd.concat([limit_ratio] * len(days), ignore_index=True)
     limit_ratio.index = days
     st_status = pd.DataFrame(False, index=days, columns=codes)
+    delisting_status = pd.DataFrame(False, index=days, columns=codes)
+    traded_amount = pd.DataFrame(1e8, index=days, columns=codes)
     factor = close.rank(axis=1, pct=True)
 
     # Entry-day open limit boundaries are checked against the factor day close.
-    up_day, down_day, st_day = 10, 20, 25
-    up_code, down_code, st_code = "000001", "300001", "688001"
+    up_day, down_day, st_day, delisting_day, no_trade_day = 10, 20, 25, 15, 28
+    up_code, down_code, st_code, delisting_code, no_trade_code = (
+        "000001",
+        "300001",
+        "688001",
+        "002001",
+        "600001",
+    )
     open_prices.loc[days[up_day], up_code] = (
         close.loc[days[up_day - 1], up_code] * 1.10
     )
@@ -944,6 +953,8 @@ def test_tradability_filter() -> None:
         close.loc[days[up_day - 1], down_code] * 1.15
     )
     st_status.loc[days[st_day], st_code] = True
+    delisting_status.loc[days[delisting_day], delisting_code] = True
+    traded_amount.loc[days[no_trade_day], no_trade_code] = 0.0
 
     masked, detail, summary = mask_untradeable_entries(
         factor,
@@ -951,22 +962,42 @@ def test_tradability_filter() -> None:
         close,
         limit_ratio,
         st_status,
+        delisting_status,
+        traded_amount,
     )
     # factor[t] is masked when day t+1 is untradeable at entry.
     assert np.isnan(masked.iloc[up_day - 1][up_code])
     assert np.isnan(masked.iloc[down_day - 1][down_code])
     assert np.isnan(masked.iloc[st_day - 1][st_code])
+    assert np.isnan(masked.iloc[st_day][st_code])
+    assert np.isnan(masked.iloc[delisting_day - 1][delisting_code])
+    assert np.isnan(masked.iloc[delisting_day][delisting_code])
+    assert np.isnan(masked.iloc[no_trade_day - 1][no_trade_code])
+    # Once the formal ST state has been withdrawn, later signal and entry days
+    # are eligible again.
+    assert not np.isnan(masked.iloc[st_day + 1][st_code])
     assert not np.isnan(masked.iloc[up_day - 1][down_code])
-    assert summary["tradability_masked_obs"] == 3
-    assert summary["tradability_masked_days"] == 3
+    assert summary["tradability_masked_obs"] == 7
+    assert summary["tradability_masked_days"] == 7
     assert summary["tradability_masked_limit_up_obs"] == 1
     assert summary["tradability_masked_limit_down_obs"] == 1
-    assert summary["tradability_masked_st_obs"] == 1
+    assert summary["tradability_masked_st_obs"] == 2
+    assert summary["tradability_masked_delisting_obs"] == 2
+    assert summary["tradability_masked_signal_st_obs"] == 1
+    assert summary["tradability_masked_entry_st_obs"] == 1
+    assert summary["tradability_masked_signal_delisting_obs"] == 1
+    assert summary["tradability_masked_entry_delisting_obs"] == 1
+    assert summary["tradability_masked_entry_no_trade_obs"] == 1
     # Everything else is untouched.
-    untouched = masked.drop(columns=[up_code, down_code, st_code])
-    expected = factor.drop(columns=[up_code, down_code, st_code])
+    untouched = masked.drop(
+        columns=[up_code, down_code, st_code, delisting_code, no_trade_code]
+    )
+    expected = factor.drop(
+        columns=[up_code, down_code, st_code, delisting_code, no_trade_code]
+    )
     assert untouched.equals(expected)
-    assert detail["n_masked"].sum() == 3
+    assert detail["n_masked"].sum() == 7
+    assert detail["n_masked_entry_no_trade"].sum() == 1
 
     # A bounded train/test factor window must still inspect the market row just
     # after its final retained signal.  The old implementation first truncated
@@ -978,9 +1009,28 @@ def test_tradability_filter() -> None:
         close,
         limit_ratio,
         st_status,
+        delisting_status,
+        traded_amount,
     )
     assert np.isnan(bounded_masked.iloc[-1][up_code])
     assert bounded_summary["tradability_masked_limit_up_obs"] == 1
+
+    # Signal-day policy checks still apply on a timeline tail without t+1.
+    tail_st = st_status.copy()
+    tail_st.loc[days[-1], up_code] = True
+    tail_masked, tail_detail, tail_summary = mask_untradeable_entries(
+        factor.iloc[-1:],
+        open_prices,
+        close,
+        limit_ratio,
+        tail_st,
+        delisting_status,
+        traded_amount,
+    )
+    assert np.isnan(tail_masked.iloc[0][up_code])
+    assert tail_summary["tradability_masked_signal_st_obs"] == 1
+    assert tail_summary["tradability_masked_entry_st_obs"] == 0
+    assert tail_detail.iloc[0]["n_masked_entry_no_trade"] == 0
 
     context = EvaluationContext(
         factor_name="tradability",
@@ -996,10 +1046,12 @@ def test_tradability_filter() -> None:
             "o": open_prices,
             "limit": limit_ratio,
             "st": st_status,
+            "delisting": delisting_status,
+            "amt": traded_amount,
         },
     )
     state = run_evaluation_methods(context, (evaluate_tradability_filter,))
-    assert state.metrics["tradability_masked_obs"] == 3
+    assert state.metrics["tradability_masked_obs"] == 7
     assert np.isnan(state.factor.iloc[up_day - 1][up_code])
     assert "tradability_filter" in state.details
     resolved = resolve_evaluation_methods("tradability_filter,quantile_returns")
@@ -1023,6 +1075,31 @@ def test_tradability_filter() -> None:
     st_wide = normalize_st_status_frame(st_long, close)
     assert bool(st_wide.loc[days[3], st_code])
     assert not bool(st_wide.loc[days[3], up_code])
+
+    delisting_long = pd.DataFrame(
+        {
+            "day": [days[4].strftime("%Y-%m-%d")],
+            "code": [delisting_code],
+            "is_delisting_period": [True],
+        }
+    )
+    delisting_wide = normalize_delisting_status_frame(delisting_long, close)
+    assert bool(delisting_wide.loc[days[4], delisting_code])
+    assert not bool(delisting_wide.loc[days[4], up_code])
+
+    for normalizer, column in (
+        (normalize_st_status_frame, "是否st"),
+        (normalize_delisting_status_frame, "is_delisting_period"),
+    ):
+        invalid = pd.DataFrame(
+            {"day": [days[4]], "code": [up_code], column: ["False"]}
+        )
+        try:
+            normalizer(invalid, close)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("string False must not pass a true-only status loader")
 
 
 def test_incremental_st_status_reconciliation() -> None:
@@ -1110,9 +1187,14 @@ def test_holding_audit() -> None:
     forward_return = open_prices.shift(-2) / open_prices.shift(-1) - 1
     limit_ratio = pd.DataFrame(0.10, index=days, columns=codes)
     st_status = pd.DataFrame(False, index=days, columns=codes)
+    delisting_status = pd.DataFrame(False, index=days, columns=codes)
+    traded_amount = pd.DataFrame(1e8, index=days, columns=codes)
     # The highest-ranked code is ST at the first signal day's next-open entry,
     # so the audit proves it uses the factor after tradability masking.
     st_status.loc[days[1], "000010"] = True
+    # A different high-ranked name is in a formal delisting period on the
+    # signal day and must also disappear from the first basket.
+    delisting_status.loc[days[0], "000009"] = True
     cap = pd.DataFrame(
         np.tile(np.arange(1, len(codes) + 1) * 1e8, (len(days), 1)),
         index=days,
@@ -1141,6 +1223,8 @@ def test_holding_audit() -> None:
                 "industry": industry,
                 "limit": limit_ratio,
                 "st": st_status,
+                "delisting": delisting_status,
+                "amt": traded_amount,
             },
         )
         methods = resolve_evaluation_methods("holding_audit")
@@ -1158,9 +1242,15 @@ def test_holding_audit() -> None:
     assert tuple(holdings.columns) == HOLDING_AUDIT_COLUMNS
     assert set(holdings["group"]) == {"G5"}
     assert not holdings["entry_is_st"].any()
+    assert not holdings["signal_is_st"].any()
+    assert not holdings["signal_is_delisting_period"].any()
+    assert not holdings["entry_is_delisting_period"].any()
     # The ST high-rank name on the first entry date cannot remain in the G5 basket.
     first_day = days[0].date().isoformat()
     assert "000010" not in set(
+        holdings.loc[holdings["signal_day"] == first_day, "security_code"]
+    )
+    assert "000009" not in set(
         holdings.loc[holdings["signal_day"] == first_day, "security_code"]
     )
     summary = state.details[HOLDING_AUDIT_SUMMARY]
@@ -1195,6 +1285,8 @@ def test_holding_audit() -> None:
             "industry": industry,
             "limit": limit_ratio,
             "st": st_status,
+            "delisting": delisting_status,
+            "amt": traded_amount,
         },
     )
     try:
@@ -1345,6 +1437,9 @@ def test_engine_integration() -> None:
         pd.DataFrame(0.10, index=days, columns=codes).to_parquet(
             root / "audit_limit_ratio_df.pq"
         )
+        pd.DataFrame(1e8, index=days, columns=codes).to_parquet(
+            root / "audit_amount_df.pq"
+        )
         pd.DataFrame(
             {
                 "trade_date": np.repeat(days, len(codes)),
@@ -1365,6 +1460,13 @@ def test_engine_integration() -> None:
                 "是否st": [True],
             }
         ).to_parquet(root / "audit_st_status_df.pq")
+        pd.DataFrame(
+            {
+                "day": [days[23]],
+                "code": ["000019"],
+                "is_delisting_period": [True],
+            }
+        ).to_parquet(root / "audit_delisting_status_df.pq")
         audit_result = evaluate_factor_expression(
             factor_name="bounded_holding_audit",
             expression="rank_cs(c)",
@@ -1376,6 +1478,8 @@ def test_engine_integration() -> None:
                 "cap": "audit_market_cap_df.pq",
                 "limit": "audit_limit_ratio_df.pq",
                 "st": "audit_st_status_df.pq",
+                "delisting": "audit_delisting_status_df.pq",
+                "amt": "audit_amount_df.pq",
                 "industry": "audit_industry.parquet",
             },
             evaluation_methods=resolve_evaluation_methods("holding_audit"),
@@ -1393,8 +1497,17 @@ def test_engine_integration() -> None:
         ]
         audited_holdings = pd.read_parquet(audit_result["artifact_paths"]["holding_audit"])
         assert not audited_holdings["entry_is_st"].any()
+        assert not audited_holdings["signal_is_st"].any()
+        assert not audited_holdings["signal_is_delisting_period"].any()
+        assert not audited_holdings["entry_is_delisting_period"].any()
         final_signal = days[23].date().isoformat()
         assert "000020" not in set(
+            audited_holdings.loc[
+                audited_holdings["signal_day"] == final_signal,
+                "security_code",
+            ]
+        )
+        assert "000019" not in set(
             audited_holdings.loc[
                 audited_holdings["signal_day"] == final_signal,
                 "security_code",
@@ -1416,6 +1529,8 @@ def test_engine_integration() -> None:
                 "cap": "audit_market_cap_df.pq",
                 "limit": "audit_limit_ratio_df.pq",
                 "st": "audit_st_status_df.pq",
+                "delisting": "audit_delisting_status_df.pq",
+                "amt": "audit_amount_df.pq",
                 "industry": "audit_industry.parquet",
             },
             evaluation_methods=resolve_evaluation_methods("holding_audit"),

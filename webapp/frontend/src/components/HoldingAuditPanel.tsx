@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Alert, Card, Descriptions, Input, Skeleton, Table, Tag, Typography } from 'antd'
+import { Alert, Card, Descriptions, Input, Skeleton, Table, Typography } from 'antd'
 import { useEffect, useState } from 'react'
 import { api, HoldingAuditPosition } from '../api/client'
 
@@ -46,13 +46,12 @@ export function HoldingAuditPanel({ runId }: { runId: string }) {
     { title: '买入开盘价', dataIndex: 'entry_open', key: 'entry_open', align: 'right' as const, width: 110, render: (value: number | null) => number(value, 3) },
     { title: '卖出开盘价', dataIndex: 'exit_open', key: 'exit_open', align: 'right' as const, width: 110, render: (value: number | null) => number(value, 3) },
     { title: '开盘收益', dataIndex: 'forward_open_return', key: 'forward_open_return', align: 'right' as const, width: 105, render: (value: number) => percent(value) },
-    { title: '买入日 ST', dataIndex: 'entry_is_st', key: 'entry_is_st', width: 100, render: (value: boolean) => <Tag color={value ? 'red' : 'green'}>{value ? '是' : '否'}</Tag> },
   ]
 
   return (
     <Card className="surface-card section-card" title="历史回测持仓（最高分位）">
       <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-        展示运行中已启用的 <code>holding_audit</code> 产物：先完成中性化、买入日可交易性过滤和净分组收益，再按信号日读取最高分位的等权目标权重。仅加载所选日期的一页仓位，不预加载全样本。
+        展示运行中已启用的 <code>holding_audit</code> 产物：先完成中性化、信号日与买入日特殊状态/买入日涨跌停过滤和净分组收益，再按信号日读取最高分位的等权目标权重。仅加载所选日期的一页仓位，不预加载全样本。
       </Typography.Paragraph>
       {dates.isLoading ? (
         <Skeleton active />

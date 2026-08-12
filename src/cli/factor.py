@@ -69,6 +69,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--limit-ratio-file", default=DEFAULT_FILES["limit"])
     parser.add_argument("--st-status-file", default=DEFAULT_FILES["st"])
     parser.add_argument(
+        "--delisting-status-file",
+        default=DEFAULT_FILES["delisting"],
+        help="point-in-time delisting-consolidation status long table",
+    )
+    parser.add_argument(
         "--industry-file",
         default=DEFAULT_FILES["industry"],
         help=(
@@ -108,6 +113,7 @@ def main() -> None:
             "cap": args.market_cap_file,
             "limit": args.limit_ratio_file,
             "st": args.st_status_file,
+            "delisting": args.delisting_status_file,
             "industry": args.industry_file,
         },
     )

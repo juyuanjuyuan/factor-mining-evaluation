@@ -28,7 +28,10 @@ HOLDING_AUDIT_COLUMNS = (
     "exit_open",
     "market_cap_yi",
     "industry_l1_code",
+    "signal_is_st",
+    "signal_is_delisting_period",
     "entry_is_st",
+    "entry_is_delisting_period",
 )
 
 
@@ -66,7 +69,7 @@ def _industry_code(value: object) -> str | None:
         "tradability_filter",
         "quantile_net_returns",
     ),
-    required_data_symbols=("cap", "industry", "o", "st"),
+    required_data_symbols=("cap", "industry", "o", "st", "delisting"),
 )
 def evaluate_holding_audit(state: EvaluationState) -> None:
     """Write the top quantile's daily holdings to a compact Parquet artifact.
@@ -78,9 +81,15 @@ def evaluate_holding_audit(state: EvaluationState) -> None:
     """
 
     market_data = state.context.market_data
-    if market_data is None or not {"cap", "industry", "o", "st"} <= set(market_data):
+    if market_data is None or not {
+        "cap",
+        "industry",
+        "o",
+        "st",
+        "delisting",
+    } <= set(market_data):
         raise ValueError(
-            "holding_audit requires cap/industry/o/st market-data matrices"
+            "holding_audit requires cap/industry/o/st/delisting market-data matrices"
         )
 
     group_returns = _require_dataframe(state, "group_returns")
@@ -118,6 +127,9 @@ def evaluate_holding_audit(state: EvaluationState) -> None:
     st_status = market_data["st"].reindex(
         index=open_prices.index, columns=factor.columns
     ).fillna(False).astype(bool)
+    delisting_status = market_data["delisting"].reindex(
+        index=open_prices.index, columns=factor.columns
+    ).fillna(False).astype(bool)
 
     signal_positions = open_prices.index.get_indexer(factor.index)
     if (signal_positions < 0).any():
@@ -153,6 +165,7 @@ def evaluate_holding_audit(state: EvaluationState) -> None:
     industry_values = industry.to_numpy(copy=False)
     open_values = open_prices.to_numpy(dtype=float, copy=False)
     st_values = st_status.to_numpy(dtype=bool, copy=False)
+    delisting_values = delisting_status.to_numpy(dtype=bool, copy=False)
     codes = factor.columns.astype(str).str.zfill(6).to_numpy()
 
     try:
@@ -207,7 +220,16 @@ def evaluate_holding_audit(state: EvaluationState) -> None:
                         _industry_code(industry_values[row_number, position])
                         for position in top_positions
                     ],
+                    "signal_is_st": st_values[
+                        signal_positions[row_number], top_positions
+                    ],
+                    "signal_is_delisting_period": delisting_values[
+                        signal_positions[row_number], top_positions
+                    ],
                     "entry_is_st": st_values[entry_position, top_positions],
+                    "entry_is_delisting_period": delisting_values[
+                        entry_position, top_positions
+                    ],
                 },
                 columns=HOLDING_AUDIT_COLUMNS,
             )

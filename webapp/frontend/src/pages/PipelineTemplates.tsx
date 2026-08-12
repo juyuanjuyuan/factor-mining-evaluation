@@ -176,19 +176,17 @@ export default function PipelineTemplates() {
                   </div>
                 </div>
                 <Space className="template-row-actions">
+                  <Button type="link" onClick={() => openEditor(template)}>
+                    编辑
+                  </Button>
                   {template.is_builtin ? (
                     <Button type="link" onClick={() => openEditor(template, true)}>
                       复制为新模板
                     </Button>
                   ) : (
-                    <>
-                      <Button type="link" onClick={() => openEditor(template)}>
-                        编辑
-                      </Button>
-                      <Button danger type="link" onClick={() => remove(template.id)}>
-                        删除
-                      </Button>
-                    </>
+                    <Button danger type="link" onClick={() => remove(template.id)}>
+                      删除
+                    </Button>
                   )}
                 </Space>
               </div>
@@ -207,7 +205,7 @@ export default function PipelineTemplates() {
       >
         <Form form={form} layout="vertical" onFinish={submitTemplate}>
           <Form.Item name="name" label="模板名称" rules={[{ required: true, whitespace: true }]}>
-            <Input />
+            <Input disabled={Boolean(editing?.is_builtin)} />
           </Form.Item>
           <Form.Item label="类型">
             <Radio.Group

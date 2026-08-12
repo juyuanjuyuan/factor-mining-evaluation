@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from engine import evaluate_expression, pct, restrict_evaluation_window, ts_mean, ts_std
-from evaluators.tradability import mask_untradeable_entries
+from evaluators.tradability import TRADABILITY_DEFINITION, mask_untradeable_entries
 from returns import RETURN_DEFINITION, calculate_forward_open_return
 from transforms import neutralize_factor_by_industry_and_market_cap
 
@@ -197,7 +197,7 @@ def prepare_fitness_context(
     if preprocess_mode == MARKET_CAP_INDUSTRY_MODE:
         required.add("industry")
     if preprocess_mode == "paper_local":
-        required.update({"amt", "limit", "st"})
+        required.update({"amt", "limit", "st", "delisting"})
     missing = required - set(market_data)
     if missing:
         raise KeyError(f"Fitness preprocessing is missing market data: {sorted(missing)}")
@@ -326,6 +326,8 @@ def preprocess_training_factor(
             context.market_data["c"],
             context.market_data["limit"],
             context.market_data["st"],
+            context.market_data["delisting"],
+            context.market_data["amt"],
         )
     winsorized = median_mad_winsorize(factor)
     if context.preprocess_mode == MARKET_CAP_INDUSTRY_MODE:
@@ -445,4 +447,6 @@ def fitness_contract(context: FitnessContext) -> dict[str, Any]:
                 "minimum_industry_observations": MIN_INDUSTRY_OBSERVATIONS,
             }
         )
+    if context.preprocess_mode == "paper_local":
+        contract["tradability_definition"] = TRADABILITY_DEFINITION
     return contract

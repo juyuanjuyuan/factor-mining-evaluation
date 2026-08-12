@@ -1,0 +1,63 @@
+{
+  "source_dir": "/Users/huangjuyuan/Desktop/database_summerintern/outputs/a_share_special_status",
+  "source_manifest_sha256": "f4eacc01c58935dc0546d164d5e93d6034165eb889e1ad06fa56b4ac2329d740",
+  "source_files": {
+    "st": {
+      "path": "/Users/huangjuyuan/Desktop/database_summerintern/outputs/a_share_special_status/st_status_df.pq",
+      "sha256": "ac9982fc9534df25f762d5115312aa66f0888e3e643baf3ec51aa9856876ed4d"
+    },
+    "delisting": {
+      "path": "/Users/huangjuyuan/Desktop/database_summerintern/outputs/a_share_special_status/delisting_period_status_df.pq",
+      "sha256": "8c2c5c0cde30a9519fda2a29721f77a5040b8187d6253532a2871a0ac8729c74"
+    },
+    "raw": {
+      "path": "/Users/huangjuyuan/Desktop/database_summerintern/outputs/a_share_special_status/special_status_raw.parquet",
+      "sha256": "c15bf2bc8dc676888feadfd568d35ed72284a99e40cd18dbc25d114cadd03bac"
+    },
+    "manifest": {
+      "path": "/Users/huangjuyuan/Desktop/database_summerintern/outputs/a_share_special_status/manifest.json",
+      "sha256": "f4eacc01c58935dc0546d164d5e93d6034165eb889e1ad06fa56b4ac2329d740"
+    }
+  },
+  "close_start": "2013-01-14",
+  "close_end": "2026-07-10",
+  "st_rows": 364727,
+  "st_securities": 853,
+  "delisting_rows": 2964,
+  "delisting_securities": 151,
+  "open_delisting_intervals": [
+    {
+      "code": "000004",
+      "effective_start": "2026-06-23",
+      "extended_through": "2026-07-10",
+      "trading_day_count": 14,
+      "basis": "explicit PARTY_STATE=6 with no PARTY_STATE=7 by data cutoff"
+    },
+    {
+      "code": "002808",
+      "effective_start": "2026-06-23",
+      "extended_through": "2026-07-10",
+      "trading_day_count": 14,
+      "basis": "explicit PARTY_STATE=6 with no PARTY_STATE=7 by data cutoff"
+    },
+    {
+      "code": "002898",
+      "effective_start": "2026-06-26",
+      "extended_through": "2026-07-10",
+      "trading_day_count": 11,
+      "basis": "explicit PARTY_STATE=6 with no PARTY_STATE=7 by data cutoff"
+    }
+  ],
+  "status_semantics": {
+    "st": "formal ST/*ST state is true from implementation through the day before the next state event",
+    "delisting": "formal delisting-consolidation state 6 through state 7 inclusive; an open state 6 extends only through this data cutoff"
+  },
+  "imported_at": "2026-08-03T14:22:52+08:00",
+  "project_root": "/Users/huangjuyuan/Desktop/因子挖掘:评价",
+  "st_backup": "/Users/huangjuyuan/Desktop/因子挖掘:评价/data/manifests/st_status_df_before_20260803_company_status_import.pq",
+  "written_files": {
+    "st_status_df.pq": "ac9982fc9534df25f762d5115312aa66f0888e3e643baf3ec51aa9856876ed4d",
+    "delisting_period_status_df.pq": "3ecc3ea7ab3b838442d36c6aacfc5ad2a23bb028fa973be80cfee04e1c99fc9f",
+    "special_status_raw.parquet": "da4b12901d97307371c5dd607439c8084262d638c0591d048e4e2b6d0f55e99a"
+  }
+}

@@ -372,7 +372,10 @@ export type HoldingAuditPosition = {
   market_cap_yi: number | null
   industry_l1_code: string | null
   industry_l1_name: string | null
-  entry_is_st: boolean
+  signal_is_st?: boolean | null
+  signal_is_delisting_period?: boolean | null
+  entry_is_st?: boolean | null
+  entry_is_delisting_period?: boolean | null
 }
 
 export type HoldingAuditReferenceData = {
